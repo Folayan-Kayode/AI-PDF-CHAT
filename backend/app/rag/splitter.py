@@ -30,9 +30,14 @@ class TextSplitter:
 
             for i, chunk in enumerate(split):
 
+                text = chunk.strip()
+
+                if not text:
+                    continue
+
                 chunks.append(
                     {
-                        "text": chunk,
+                        "text": text,
                         "page": page["page"],
                         "chunk": i + 1,
                     }

@@ -21,6 +21,7 @@ logs/
 uploads/
 
 chroma/
+chroma_db/
 
 .cache/
 

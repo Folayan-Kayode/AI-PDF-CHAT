@@ -1,6 +1,10 @@
 from app.rag.generator import GeminiGenerator
 from app.rag.retriever import Retriever
 
+NOT_FOUND_MESSAGE = (
+    "I couldn't find that information in the uploaded document."
+)
+
 
 class RAGPipeline:
 
@@ -12,14 +16,14 @@ class RAGPipeline:
 
         results = self.retriever.retrieve(question)
 
-        if not results["documents"]:
-            return {
-        "answer": "I couldn't find that information in the uploaded document.",
-        "sources": []
-    }
+        documents = results.get("documents") or []
+        metadata = results.get("metadata") or []
 
-        documents = results["documents"]
-        metadata = results["metadata"]
+        if not documents:
+            return {
+                "answer": NOT_FOUND_MESSAGE,
+                "sources": []
+            }
 
         context = "\n\n".join(documents)
 
@@ -45,6 +49,13 @@ Answer:
 """
 
         answer = self.generator.generate(prompt)
+
+        # Only return sources when the model actually answered the question.
+        if NOT_FOUND_MESSAGE.lower() in (answer or "").lower():
+            return {
+                "answer": answer,
+                "sources": []
+            }
 
         return {
             "answer": answer,

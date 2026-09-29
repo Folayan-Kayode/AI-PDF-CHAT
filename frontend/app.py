@@ -80,9 +80,6 @@ question = st.chat_input(
 
 if question:
 
-    with st.chat_message("user"):
-        st.write(question)
-
     with st.spinner("Gemini is thinking..."):
 
         response = requests.post(
@@ -121,10 +118,12 @@ for chat in st.session_state.messages:
 
         st.write(chat["answer"])
 
-        with st.expander("Sources"):
+        if chat["sources"]:
 
-            for source in chat["sources"]:
+            with st.expander("Sources"):
 
-                st.write(
-                    f"Page {source['page']} • Chunk {source['chunk']}"
-                )
+                for source in chat["sources"]:
+
+                    st.write(
+                        f"Page {source['page']} • Chunk {source['chunk']}"
+                    )
