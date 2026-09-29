@@ -1,0 +1,3 @@
+# Never apply line-ending conversion to binary documents: a checkout with
+# core.autocrlf=true would otherwise rewrite the bytes inside the file.
+*.pdf binary

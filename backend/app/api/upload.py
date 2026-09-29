@@ -1,10 +1,17 @@
+"""PDF upload endpoint."""
+
+import logging
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
-from app.core.exceptions import PDFProcessingError
+from app.core.exceptions import AppError
 from app.services.pdf_service import PDFService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/upload",
@@ -20,8 +27,9 @@ READ_CHUNK_SIZE = 1024 * 1024
 
 @router.post("/")
 async def upload_pdf(
-    file: UploadFile = File(...)
+    file: Annotated[UploadFile, File()],
 ):
+    """Store and index an uploaded PDF."""
     # Path(file.filename).name strips any directory components sent by the
     # client, which prevents path traversal.
     filename = Path(file.filename or "").name
@@ -82,11 +90,25 @@ async def upload_pdf(
         raise
 
     try:
-        result = PDFService.process(destination)
+        # Parsing and embedding are blocking work, so it runs in the
+        # threadpool to keep the event loop responsive.
+        result = await run_in_threadpool(
+            PDFService.process,
+            destination,
+        )
 
-    except PDFProcessingError as exc:
+    except AppError:
+        # A failed ingest should not leave a file behind.
         destination.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise
+
+    logger.info(
+        "ingested filename=%s pages=%s chunks=%s duplicate=%s",
+        filename,
+        len(result["pages"]),
+        len(result["chunks"]),
+        result["duplicate"],
+    )
 
     if result["duplicate"]:
         return {

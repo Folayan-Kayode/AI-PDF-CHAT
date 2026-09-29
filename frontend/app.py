@@ -1,7 +1,13 @@
+"""Streamlit UI for AI PDF Chat."""
+
+import os
+
 import requests
 import streamlit as st
 
-BACKEND_URL = "http://127.0.0.1:8000"
+BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
+
+REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "300"))
 
 st.set_page_config(
     page_title="AI PDF Chat",
@@ -18,6 +24,92 @@ if "messages" not in st.session_state:
 
 if "uploaded_file_name" not in st.session_state:
     st.session_state.uploaded_file_name = None
+
+# ----------------------------
+# Backend helpers
+# ----------------------------
+
+
+def backend_error_message(response):
+    """Turn an error response into something a user can act on."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return f"Request failed with HTTP {response.status_code}."
+
+    detail = payload.get("detail") if isinstance(payload, dict) else None
+
+    if isinstance(detail, list):
+        # FastAPI validation errors arrive as a list of objects.
+        return "; ".join(
+            str(item.get("msg", item)) if isinstance(item, dict) else str(item)
+            for item in detail
+        )
+
+    if detail:
+        return str(detail)
+
+    return f"Request failed with HTTP {response.status_code}."
+
+
+def unreachable_message(exc):
+    return (
+        f"Could not reach the backend at {BACKEND_URL}. "
+        f"Is it running? ({type(exc).__name__})"
+    )
+
+
+def upload_pdf(uploaded_file):
+    """Upload a PDF. Returns (ok, message)."""
+    files = {
+        "file": (
+            uploaded_file.name,
+            uploaded_file,
+            "application/pdf"
+        )
+    }
+
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/upload/",
+            files=files,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+    except requests.RequestException as exc:
+        return False, unreachable_message(exc)
+
+    if response.status_code != 200:
+        return False, backend_error_message(response)
+
+    payload = response.json()
+
+    if payload.get("duplicate"):
+        return True, f"{uploaded_file.name} was already uploaded."
+
+    return True, (
+        f"{uploaded_file.name} uploaded successfully "
+        f"({payload.get('pages')} pages, {payload.get('chunks')} chunks)."
+    )
+
+
+def ask_question(question):
+    """Ask the backend a question. Returns (payload, error)."""
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/chat/",
+            json={
+                "question": question
+            },
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+    except requests.RequestException as exc:
+        return None, unreachable_message(exc)
+
+    if response.status_code != 200:
+        return None, backend_error_message(response)
+
+    return response.json(), None
+
 
 # ----------------------------
 # Title
@@ -45,28 +137,17 @@ if (
 
     with st.spinner("Uploading PDF..."):
 
-        files = {
-            "file": (
-                uploaded_file.name,
-                uploaded_file,
-                "application/pdf"
-            )
-        }
+        ok, message = upload_pdf(uploaded_file)
 
-        response = requests.post(
-            f"{BACKEND_URL}/upload/",
-            files=files
-        )
+    if ok:
 
-    if response.status_code == 200:
-
-        st.success(f"{uploaded_file.name} uploaded successfully!")
+        st.success(message)
 
         st.session_state.uploaded_file_name = uploaded_file.name
 
     else:
 
-        st.error(response.text)
+        st.error(message)
 
 st.divider()
 
@@ -82,16 +163,13 @@ if question:
 
     with st.spinner("Model is thinking..."):
 
-        response = requests.post(
-            f"{BACKEND_URL}/chat/",
-            json={
-                "question": question
-            }
-        )
+        answer, error = ask_question(question)
 
-    if response.status_code == 200:
+    if error:
 
-        answer = response.json()
+        st.error(error)
+
+    else:
 
         st.session_state.messages.append(
             {
@@ -100,10 +178,6 @@ if question:
                 "sources": answer["sources"]
             }
         )
-
-    else:
-
-        st.error(response.text)
 
 # ----------------------------
 # Conversation

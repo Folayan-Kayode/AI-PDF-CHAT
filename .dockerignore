@@ -1,0 +1,19 @@
+# Build context exclusions.
+.git
+.gitignore
+.github
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+.venv
+venv
+.env
+.env.*
+!.env.example
+
+# Runtime state: never ship an index or uploaded documents into an image.
+backend/chroma_db
+backend/uploads
+*.db
+*.sqlite3

@@ -1,16 +1,22 @@
-import hashlib
+"""End-to-end PDF ingestion."""
 
-from app.core.exceptions import PDFProcessingError
-from app.database.chroma import ChromaDatabase
-from app.rag.embeddings import EmbeddingModel
+import hashlib
+from pathlib import Path
+from typing import Any
+
+from app.core.config import settings
+from app.core.exceptions import DocumentTooLargeError, PDFProcessingError
+from app.database.chroma import ChromaDatabase, get_database
+from app.rag.embeddings import EmbeddingModel, get_embedding_model
 from app.rag.loader import PDFLoader
 from app.rag.splitter import TextSplitter
 
 
 class PDFService:
+    """Loads, chunks, embeds and indexes an uploaded document."""
 
     @staticmethod
-    def file_hash(pdf_path) -> str:
+    def file_hash(pdf_path: str | Path) -> str:
         """Stable content hash used for chunk IDs and duplicate detection."""
         digest = hashlib.sha256()
 
@@ -20,11 +26,24 @@ class PDFService:
 
         return digest.hexdigest()
 
-    @staticmethod
-    def process(pdf_path):
-        document_id = PDFService.file_hash(pdf_path)
+    @classmethod
+    def process(
+        cls,
+        pdf_path: str | Path,
+        database: ChromaDatabase | None = None,
+        embedding_model: EmbeddingModel | None = None,
+    ) -> dict[str, Any]:
+        """
+        Ingest a PDF into the vector store.
 
-        database = ChromaDatabase()
+        The document replaces the current index (single-document mode).
+        Returns page/chunk counts, or duplicate=True without re-embedding
+        when the same content has already been ingested.
+        """
+        document_id = cls.file_hash(pdf_path)
+
+        database = database or get_database()
+        embedding_model = embedding_model or get_embedding_model()
 
         if database.has_document(document_id):
             return {
@@ -34,37 +53,36 @@ class PDFService:
                 "duplicate": True,
             }
 
-        loader = PDFLoader(pdf_path)
-        pages = loader.load()
+        pages = PDFLoader(pdf_path).load()
 
-        splitter = TextSplitter()
-        chunks = splitter.split_pages(pages)
+        chunks = TextSplitter().split_pages(pages)
 
         if not chunks:
             raise PDFProcessingError(
                 "No usable text chunks could be created from this PDF."
             )
 
-        embedding_model = EmbeddingModel()
-
-        texts = []
-        ids = []
-        metadatas = []
-
-        for chunk in chunks:
-            texts.append(chunk["text"])
-
-            ids.append(
-                f"{document_id}_{chunk['page']}_{chunk['chunk']}"
+        if len(chunks) > settings.MAX_CHUNKS_PER_DOCUMENT:
+            raise DocumentTooLargeError(
+                f"This document produced {len(chunks)} chunks, which exceeds "
+                f"the {settings.MAX_CHUNKS_PER_DOCUMENT}-chunk limit."
             )
 
-            metadatas.append(
-                {
-                    "page": chunk["page"],
-                    "chunk": chunk["chunk"],
-                    "document_id": document_id,
-                }
-            )
+        texts = [chunk["text"] for chunk in chunks]
+
+        ids = [
+            f"{document_id}_{chunk['page']}_{chunk['chunk']}"
+            for chunk in chunks
+        ]
+
+        metadatas = [
+            {
+                "page": chunk["page"],
+                "chunk": chunk["chunk"],
+                "document_id": document_id,
+            }
+            for chunk in chunks
+        ]
 
         embeddings = embedding_model.embed_documents(texts)
 
