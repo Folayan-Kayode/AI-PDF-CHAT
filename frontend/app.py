@@ -24,7 +24,7 @@ if "uploaded_file_name" not in st.session_state:
 # ----------------------------
 
 st.title("📄 AI PDF Chat")
-st.caption("Upload a PDF and chat with it using Gemini.")
+st.caption("Retrieve information from your document")
 
 st.divider()
 
@@ -80,7 +80,7 @@ question = st.chat_input(
 
 if question:
 
-    with st.spinner("Gemini is thinking..."):
+    with st.spinner("Model is thinking..."):
 
         response = requests.post(
             f"{BACKEND_URL}/chat/",

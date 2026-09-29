@@ -1,4 +1,4 @@
-from app.rag.generator import GeminiGenerator
+from app.rag.generator import DeepSeekGenerator
 from app.rag.retriever import Retriever
 
 NOT_FOUND_MESSAGE = (
@@ -10,7 +10,7 @@ class RAGPipeline:
 
     def __init__(self):
         self.retriever = Retriever()
-        self.generator = GeminiGenerator()
+        self.generator = DeepSeekGenerator()
 
     def ask(self, question: str):
 

@@ -1,20 +1,30 @@
-from google import genai
+from openai import OpenAI
 
 from app.core.config import settings
 
 
-class GeminiGenerator:
+class DeepSeekGenerator:
+    """
+    Generation via DeepSeek's OpenAI-compatible chat completions API.
+
+    Embeddings remain on Google; only the generator is switched here.
+    """
 
     def __init__(self):
-        self.client = genai.Client(
-            api_key=settings.GOOGLE_API_KEY
+        self.client = OpenAI(
+            api_key=settings.DEEPSEEK_API_KEY,
+            base_url=settings.DEEPSEEK_BASE_URL,
         )
 
-    def generate(self, prompt: str):
-
-        response = self.client.models.generate_content(
+    def generate(self, prompt: str) -> str:
+        response = self.client.chat.completions.create(
             model=settings.MODEL_NAME,
-            contents=prompt,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
         )
 
-        return response.text
+        return response.choices[0].message.content

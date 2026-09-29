@@ -25,9 +25,19 @@ class Settings:
 
     API_VERSION = "1.0.0"
 
-    MODEL_NAME = _env("MODEL", "gemini-3.6-flash")
+    # Generation: DeepSeek (OpenAI-compatible API)
+    MODEL_NAME = _env("MODEL", "deepseek-chat")
 
-    EMBEDDING_MODEL = _env("EMBEDDING_MODEL", "gemini-embedding-2")
+    DEEPSEEK_BASE_URL = _env(
+        "DEEPSEEK_BASE_URL",
+        "https://api.deepseek.com",
+    )
+
+    # Embeddings: Google
+    EMBEDDING_MODEL = _env(
+        "EMBEDDING_MODEL",
+        "gemini-embedding-2",
+    )
 
     UPLOAD_DIRECTORY = "uploads"
 
@@ -38,15 +48,21 @@ class Settings:
     MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
     def __init__(self):
-        self.GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+        self.GOOGLE_API_KEY = self._require("GOOGLE_API_KEY")
 
-        if not self.GOOGLE_API_KEY or not self.GOOGLE_API_KEY.strip():
+        self.DEEPSEEK_API_KEY = self._require("DEEPSEEK_API_KEY")
+
+    @staticmethod
+    def _require(name: str) -> str:
+        value = os.getenv(name)
+
+        if not value or not value.strip():
             raise RuntimeError(
-                "GOOGLE_API_KEY is not set. "
-                "Copy .env.example to .env and add your Google API key."
+                f"{name} is not set. "
+                f"Copy .env.example to .env and add your {name}."
             )
 
-        self.GOOGLE_API_KEY = self.GOOGLE_API_KEY.strip()
+        return value.strip()
 
 
 settings = Settings()
