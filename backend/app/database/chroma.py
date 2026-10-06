@@ -18,6 +18,9 @@ STAGING_COLLECTION_NAME = "pdf_documents__staging"
 
 PREVIOUS_COLLECTION_NAME = "pdf_documents__previous"
 
+# Metadata kind for the document profile chunk (see app/rag/summarizer.py).
+DOCUMENT_SUMMARY_KIND = "document_summary"
+
 
 class ChromaDatabase:
     """
@@ -100,6 +103,35 @@ class ChromaDatabase:
             metadata["embedding_model"]
             for metadata in metadatas
             if metadata and metadata.get("embedding_model")
+        }
+
+    def document_profile(self) -> dict[str, Any] | None:
+        """
+        The document profile chunk, if one is indexed.
+
+        The profile is document-level metadata (title, author, publisher), so
+        it is supplied to the model directly instead of competing in the
+        vector ranking: a question like "what is the title of this book?" does
+        not embed close to the profile, even though the profile answers it.
+        """
+        try:
+            result = self.collection.get(
+                where={"kind": DOCUMENT_SUMMARY_KIND},
+                limit=1,
+                include=["documents", "metadatas"],
+            )
+        except Exception as exc:
+            raise RetrievalError("Could not read the document index.") from exc
+
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
+
+        if not documents:
+            return None
+
+        return {
+            "text": documents[0],
+            "metadata": metadatas[0] if metadatas else {},
         }
 
     # ------------------------------------------------------------------

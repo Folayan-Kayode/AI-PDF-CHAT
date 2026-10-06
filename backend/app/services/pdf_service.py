@@ -13,10 +13,11 @@ from app.core.exceptions import (
     PDFProcessingError,
     RetrievalError,
 )
-from app.database.chroma import ChromaDatabase, get_database
+from app.database.chroma import DOCUMENT_SUMMARY_KIND, ChromaDatabase, get_database
 from app.rag.embeddings import EmbeddingModel, get_embedding_model
 from app.rag.loader import PDFLoader
 from app.rag.splitter import TextSplitter
+from app.rag.summarizer import DocumentSummarizer
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,16 @@ logger = logging.getLogger(__name__)
 # guard is process-wide: the application assumes a single uvicorn worker
 # (see README).
 _INGESTION_LOCK = threading.Lock()
+
+
+def _profile_chunk(profile: str) -> dict[str, Any]:
+    """The chunk that lets a document answer questions about itself."""
+    return {
+        "text": f"Document profile:\n{profile}",
+        "page": 1,
+        "chunk": 0,
+        "kind": DOCUMENT_SUMMARY_KIND,
+    }
 
 
 class PDFService:
@@ -47,6 +58,7 @@ class PDFService:
         pdf_path: str | Path,
         database: ChromaDatabase | None = None,
         embedding_model: EmbeddingModel | None = None,
+        summarizer: DocumentSummarizer | None = None,
     ) -> dict[str, Any]:
         """
         Ingest a PDF into the vector store.
@@ -67,7 +79,7 @@ class PDFService:
             )
 
         try:
-            return cls._ingest(pdf_path, database, embedding_model)
+            return cls._ingest(pdf_path, database, embedding_model, summarizer)
         finally:
             _INGESTION_LOCK.release()
 
@@ -77,6 +89,7 @@ class PDFService:
         pdf_path: str | Path,
         database: ChromaDatabase,
         embedding_model: EmbeddingModel,
+        summarizer: DocumentSummarizer | None = None,
     ) -> dict[str, Any]:
         document_id = cls.file_hash(pdf_path)
 
@@ -92,6 +105,13 @@ class PDFService:
         pages = PDFLoader(pdf_path).load()
 
         chunks = TextSplitter().split_pages(pages)
+
+        profile = (summarizer or DocumentSummarizer()).summarize(pages)
+
+        if profile:
+            # Prepended so it is the first chunk of the document; chunk 0
+            # keeps it distinct from the splitter's 1-based numbering.
+            chunks = [_profile_chunk(profile), *chunks]
 
         if not chunks:
             raise PDFProcessingError("No usable text chunks could be created from this PDF.")
@@ -112,6 +132,7 @@ class PDFService:
             {
                 "page": chunk["page"],
                 "chunk": chunk["chunk"],
+                "kind": chunk.get("kind", "content"),
                 "document_id": document_id,
                 "embedding_model": settings.EMBEDDING_MODEL,
                 "schema_version": settings.EMBEDDING_SCHEMA_VERSION,

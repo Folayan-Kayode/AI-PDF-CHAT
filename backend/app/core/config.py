@@ -38,6 +38,23 @@ def _env_float(name: str, default: float) -> float:
         raise RuntimeError(f"{name} must be a number, got {raw!r}.") from exc
 
 
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+_FALSE_VALUES = {"0", "false", "no", "off"}
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = _env(name, "true" if default else "false").lower()
+
+    if raw in _TRUE_VALUES:
+        return True
+
+    if raw in _FALSE_VALUES:
+        return False
+
+    raise RuntimeError(f"{name} must be a boolean, got {raw!r}.")
+
+
 class Settings:
     PROJECT_NAME = "AI PDF Chat"
 
@@ -123,10 +140,54 @@ class Settings:
         0.0,
     )
 
-    # ---------------- Retrieval / prompt budget --------------------------
+    # ---------------- Retrieval ------------------------------------------
     RETRIEVAL_TOP_K = _env_int("RETRIEVAL_TOP_K", 5)
 
+    # How many candidates to pull before reranking. Retrieval is cheap and
+    # reranking is not, so it pays to cast a wide net first.
+    RETRIEVAL_CANDIDATES = _env_int("RETRIEVAL_CANDIDATES", 20)
+
+    # Chunks further away than this are treated as noise. The useful scale
+    # depends on the embedding model and the document, so it is tunable.
+    RETRIEVAL_MAX_DISTANCE = _env_float("RETRIEVAL_MAX_DISTANCE", 0.75)
+
     MAX_CONTEXT_CHARS = _env_int("MAX_CONTEXT_CHARS", 12000)
+
+    # ---------------- Retrieval quality ----------------------------------
+    # Rewriting the question into search terms recovers questions whose
+    # phrasing does not match the document's wording.
+    QUERY_REWRITE_ENABLED = _env_bool("QUERY_REWRITE_ENABLED", True)
+
+    QUERY_REWRITE_MAX_CHARS = _env_int("QUERY_REWRITE_MAX_CHARS", 200)
+
+    # Reranking reorders candidates with the model. It costs one extra call
+    # per question, so it is skipped when retrieval is already confident.
+    RERANK_ENABLED = _env_bool("RERANK_ENABLED", True)
+
+    RERANK_SKIP_DISTANCE = _env_float("RERANK_SKIP_DISTANCE", 0.35)
+
+    RERANK_SNIPPET_CHARS = _env_int("RERANK_SNIPPET_CHARS", 300)
+
+    # ---------------- Document profile -----------------------------------
+    # Questions about the document itself (title, author, publisher) use
+    # words that appear nowhere in the question, so the document is asked to
+    # describe itself once at ingest time and that profile is indexed.
+    DOCUMENT_SUMMARY_ENABLED = _env_bool("DOCUMENT_SUMMARY_ENABLED", True)
+
+    DOCUMENT_SUMMARY_SOURCE_PAGES = _env_int(
+        "DOCUMENT_SUMMARY_SOURCE_PAGES",
+        10,
+    )
+
+    DOCUMENT_SUMMARY_MAX_CHARS = _env_int("DOCUMENT_SUMMARY_MAX_CHARS", 600)
+
+    # The profile is supplied to the model with every question, alongside the
+    # retrieved passages, because vector search does not surface it for the
+    # questions it exists to answer.
+    DOCUMENT_PROFILE_IN_CONTEXT = _env_bool(
+        "DOCUMENT_PROFILE_IN_CONTEXT",
+        True,
+    )
 
     # ---------------- Observability --------------------------------------
     LOG_LEVEL = _env("LOG_LEVEL", "INFO")

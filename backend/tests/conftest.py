@@ -20,6 +20,17 @@ os.environ["CHROMA_DIRECTORY"] = str(_TMP_ROOT / "chroma_db")
 os.environ["LOG_LEVEL"] = "WARNING"
 os.environ["EMBEDDING_BATCH_DELAY_SECONDS"] = "0"
 
+# Retries must not make the suite sleep for real.
+os.environ["EMBEDDING_RETRY_BASE_SECONDS"] = "0"
+os.environ["CHROMA_WRITE_RETRY_BASE_SECONDS"] = "0"
+
+# Query rewriting and reranking each spend a model call. Tests that care about
+# them enable them explicitly with fakes injected; everything else runs
+# without touching the network.
+os.environ["QUERY_REWRITE_ENABLED"] = "false"
+os.environ["RERANK_ENABLED"] = "false"
+os.environ["DOCUMENT_SUMMARY_ENABLED"] = "false"
+
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 

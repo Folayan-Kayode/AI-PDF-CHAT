@@ -14,10 +14,14 @@ Single-document RAG chat over an uploaded PDF, built with FastAPI, Streamlit, De
 - Embeds in paced batches and retries a transient failure with backoff, honouring the provider's `Retry-After`, so one quota blip does not discard the whole document.
 - Chunks the document, then writes the vectors into a staging collection and swaps it in. A failed write leaves the previously indexed document queryable, and the error says so.
 - Records the embedding model and schema version in each chunk's metadata.
+- Reads the opening pages once and indexes a **document profile** (title, author, publisher, edition, short summary) as its own chunk, then supplies that profile with every question. Questions about the document itself use words the question never contains, so search alone cannot surface it — measured at distance 0.79 for *"what is the title of this book?"*, versus a 0.75 threshold. The profile costs one model call per document, not per question, and a failure simply skips it.
 
 **Answering**
 - Chat via `POST /chat/` (`question` non-empty, max 2000 chars).
 - Retrieves the top-k chunks with Gemini embeddings and answers with DeepSeek (`deepseek-chat`) using a context-only prompt.
+- Searches with the question **and** an LLM-rewritten variant, merging both result sets by best distance, so a weak rewrite cannot lose a chunk the original would have found.
+- Reranks the candidate pool by reading each passage alongside the question, which separates chunks that embedding distance alone confuses. Reranking only ever reorders, never discards.
+- Drops matches weaker than `RETRIEVAL_MAX_DISTANCE`, so noise is not sent as context.
 - Detects an index built with a different embedding model and treats it as empty rather than returning meaningless neighbours.
 - Treats document text as untrusted: it is delimited, closing delimiters are escaped, and the model is told to ignore instructions found inside it.
 - Truncates context to a character budget and reports only the sources that were actually sent to the model.
@@ -68,7 +72,18 @@ Copy `.env.example` to `.env`. Both API keys are required and the app fails at s
 | `MAX_FILENAME_LENGTH` | `200` | Rejects absurd filenames with `400`. |
 | `INGESTION_LOCK_TIMEOUT_SECONDS` | `0` | `0` rejects a concurrent upload immediately. |
 | `RETRIEVAL_TOP_K` | `5` | Chunks retrieved per question. |
+| `RETRIEVAL_CANDIDATES` | `20` | Candidates pulled before reranking. |
+| `RETRIEVAL_MAX_DISTANCE` | `0.75` | Matches weaker than this are treated as noise. Corpus-dependent. |
 | `MAX_CONTEXT_CHARS` | `12000` | Prompt context budget. |
+| `QUERY_REWRITE_ENABLED` | `true` | Search with an LLM-rewritten query as well. One call per question. |
+| `QUERY_REWRITE_MAX_CHARS` | `200` | Length cap on the rewritten query. |
+| `RERANK_ENABLED` | `true` | Rerank candidates by reading them with the question. |
+| `RERANK_SKIP_DISTANCE` | `0.35` | Skip the rerank call when retrieval is already confident. |
+| `RERANK_SNIPPET_CHARS` | `300` | Passage length shown to the reranker. |
+| `DOCUMENT_SUMMARY_ENABLED` | `true` | Index a profile chunk built from the opening pages. One call per document. |
+| `DOCUMENT_SUMMARY_SOURCE_PAGES` | `10` | Opening pages read to build the profile. |
+| `DOCUMENT_SUMMARY_MAX_CHARS` | `600` | Profile length cap. |
+| `DOCUMENT_PROFILE_IN_CONTEXT` | `true` | Supply the profile with every question, since search does not surface it. |
 | `LOG_LEVEL` | `INFO` | Root log level. |
 | `HEALTH_DEEP_CACHE_SECONDS` | `30` | Cache for the `?deep=true` provider probe. |
 
@@ -98,11 +113,25 @@ pytest          # includes a coverage floor of 75% for app/
 
 Tests mock the LLM and the embedding provider, so they run without API keys or network access.
 
+## Optional extras
+
+`pypdf` parses the encoding of CFF/Type1 fonts more accurately when `fontTools`
+is installed. It is not required — text extraction works without it — but it
+silences `fontTools is required to fully parse the encoding...` warnings and can
+improve extraction on PDFs that use those fonts:
+
+```bash
+pip install fonttools
+```
+
+
 ## Known limitations
 
 - **Run a single worker.** Ingestion is serialised with a process-wide lock and ChromaDB is used in embedded (file) mode. Multiple uvicorn workers would each hold their own client over one directory and could interleave resets. Running multiple workers requires moving Chroma to server mode.
 - **Changing `EMBEDDING_MODEL` invalidates the index.** Existing vectors are not re-embedded; the mismatch is detected and reported as `degraded` by `/ready` instead of being queried, so re-upload the document.
 - **No OCR.** Scanned or image-only PDFs are rejected, not transcribed.
+- **Retrieval thresholds are corpus-dependent.** `RETRIEVAL_MAX_DISTANCE` and `RERANK_SKIP_DISTANCE` are tuned against the sample documents here; a different embedding model or document mix needs its own values.
+- **A question whose answer words are unknowable from the question alone** (for example "what is the title of this book?") is answered from the document profile chunk, not from a content chunk. If the opening pages do not state the field, the profile says `unknown` and the question abstains.
 - **Single document.** A new upload replaces the previous index; there is no document list or per-document selection yet.
 - **No Docker yet.** There are no Dockerfiles or compose file; containerisation is planned for a later phase.
 - No streaming responses, conversation memory, authentication, or rate limiting for callers.

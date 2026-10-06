@@ -222,3 +222,102 @@ def test_file_hash_is_stable_and_content_specific(fixtures_dir: Path, tmp_path: 
 
     assert PDFService.file_hash(sample) == PDFService.file_hash(sample)
     assert PDFService.file_hash(sample) != PDFService.file_hash(other)
+
+
+# --------------------------------------------------------------------------
+# Document profile chunk
+# --------------------------------------------------------------------------
+
+
+class FakeSummarizer:
+    """Stands in for the ingest-time profile builder."""
+
+    def __init__(self, profile: str | None = "Title: Example\nPublisher: Cengage"):
+        self.profile = profile
+        self.pages_seen: list[list[dict]] = []
+
+    def summarize(self, pages):
+        self.pages_seen.append(pages)
+        return self.profile
+
+
+def test_profile_chunk_is_indexed_first(fixtures_dir: Path, database: FakeDatabase):
+    embedder = FakeEmbedder()
+
+    PDFService.process(
+        fixtures_dir / "sample.pdf",
+        database=database,
+        embedding_model=embedder,
+        summarizer=FakeSummarizer("Title: Sample Book\nPublisher: Cengage"),
+    )
+
+    ids, documents, embeddings, metadatas = database.writes[-1]
+
+    assert documents[0].startswith("Document profile:")
+    assert "Publisher: Cengage" in documents[0]
+    assert metadatas[0]["kind"] == "document_summary"
+    assert metadatas[0]["chunk"] == 0
+    assert metadatas[1]["kind"] == "content"
+
+    assert len(ids) == len(documents) == len(embeddings) == len(metadatas)
+    assert len(ids) == len(set(ids))
+
+
+def test_profile_receives_the_extracted_pages(fixtures_dir: Path, database: FakeDatabase):
+    summarizer = FakeSummarizer()
+
+    PDFService.process(
+        fixtures_dir / "sample.pdf",
+        database=database,
+        embedding_model=FakeEmbedder(),
+        summarizer=summarizer,
+    )
+
+    assert summarizer.pages_seen
+    assert summarizer.pages_seen[0][0]["page"] == 1
+
+
+def test_no_profile_chunk_when_the_profile_is_unavailable(
+    fixtures_dir: Path,
+    database: FakeDatabase,
+):
+    PDFService.process(
+        fixtures_dir / "sample.pdf",
+        database=database,
+        embedding_model=FakeEmbedder(),
+        summarizer=FakeSummarizer(None),
+    )
+
+    _, _, _, metadatas = database.writes[-1]
+
+    assert all(metadata["kind"] == "content" for metadata in metadatas)
+
+
+def test_no_profile_chunk_when_disabled(fixtures_dir: Path, database: FakeDatabase):
+    # The default summarizer is used and DOCUMENT_SUMMARY_ENABLED is false.
+    PDFService.process(
+        fixtures_dir / "sample.pdf",
+        database=database,
+        embedding_model=FakeEmbedder(),
+    )
+
+    _, _, _, metadatas = database.writes[-1]
+
+    assert all(metadata["kind"] == "content" for metadata in metadatas)
+
+
+def test_profile_counts_toward_the_chunk_limit(
+    fixtures_dir: Path,
+    database: FakeDatabase,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "MAX_CHUNKS_PER_DOCUMENT", 1)
+
+    # The single content chunk plus the profile already exceeds a limit of 1.
+    with pytest.raises(DocumentTooLargeError):
+        PDFService.process(
+            fixtures_dir / "sample.pdf",
+            database=database,
+            embedding_model=FakeEmbedder(),
+            summarizer=FakeSummarizer(),
+        )

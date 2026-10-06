@@ -1,3 +1,9 @@
-# Direct runtime dependencies only.
+# Runtime dependencies: everything here is imported by the frontend.
+#
+# Pinned to the versions this project is developed and tested against.
+
+# Calls the backend API.
 requests==2.34.2
+
+# User interface.
 streamlit==1.64.0

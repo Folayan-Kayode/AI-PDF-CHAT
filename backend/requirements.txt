@@ -1,12 +1,30 @@
-# Direct runtime dependencies only.
-# Pinned to the versions this application is developed and tested against.
-chromadb==1.5.9
+# Runtime dependencies: everything here is either imported by the
+# application, or required at runtime by a framework we use.
+#
+# Pinned to the versions this project is developed and tested against.
+# Installing exactly this file is verified by a fresh-environment test run.
+
+# --- web framework -----------------------------------------------------
 fastapi==0.142.0
-langchain-google-genai==4.4.0
-langchain-text-splitters==1.1.2
-openai==3.22.0
-pydantic==2.13.5
-pypdf==6.19.0
-python-dotenv==1.2.3
-python-multipart==0.0.32
+# ASGI server; the [standard] extra provides --reload's file watcher.
 uvicorn[standard]==0.54.0
+# Required by FastAPI to parse multipart/form-data file uploads (not
+# imported directly by this project).
+python-multipart==0.0.32
+
+# --- configuration -----------------------------------------------------
+# Loads .env; pydantic validates request bodies (also a FastAPI dependency).
+python-dotenv==1.2.3
+pydantic==2.13.5
+
+# --- vector store ------------------------------------------------------
+chromadb==1.5.9
+
+# --- document ingestion ------------------------------------------------
+pypdf==6.19.0
+langchain-text-splitters==1.1.2
+
+# --- model providers ---------------------------------------------------
+# Gemini embeddings, and DeepSeek generation over the OpenAI-compatible API.
+langchain-google-genai==4.4.0
+openai==3.22.0

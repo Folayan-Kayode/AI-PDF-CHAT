@@ -17,7 +17,7 @@ CONFIG_SOURCE = BACKEND_ROOT / "app" / "core" / "config.py"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 # Any call that declares an environment variable name.
-_DECLARED_PATTERN = re.compile(r'(?:_env(?:_int|_float)?|_require)\(\s*"([A-Z0-9_]+)"')
+_DECLARED_PATTERN = re.compile(r'(?:_env\w*|_require)\(\s*"([A-Z0-9_]+)"')
 
 # Uncommented KEY=value lines.
 _DOCUMENTED_PATTERN = re.compile(r"^([A-Z0-9_]+)=", re.MULTILINE)
@@ -95,6 +95,11 @@ def test_limits_are_sane():
     assert settings.MAX_FILENAME_LENGTH > 0
     assert settings.MAX_CONTEXT_CHARS > 0
     assert settings.RETRIEVAL_TOP_K > 0
+    assert settings.RETRIEVAL_CANDIDATES >= settings.RETRIEVAL_TOP_K
+    assert settings.RETRIEVAL_MAX_DISTANCE > 0
+    assert settings.QUERY_REWRITE_MAX_CHARS > 0
+    assert settings.RERANK_SKIP_DISTANCE >= 0
+    assert settings.RERANK_SNIPPET_CHARS > 0
     assert settings.EMBEDDING_BATCH_SIZE > 0
     assert settings.EMBEDDING_MAX_RETRIES >= 1
     assert settings.EMBEDDING_REQUESTS_PER_MINUTE > 0
@@ -109,6 +114,13 @@ def test_limits_are_sane():
 
 def test_model_default_is_deepseek():
     assert settings.MODEL_NAME == "deepseek-chat"
+
+
+def test_profile_and_retrieval_switches_are_booleans():
+    assert isinstance(settings.DOCUMENT_PROFILE_IN_CONTEXT, bool)
+    assert isinstance(settings.QUERY_REWRITE_ENABLED, bool)
+    assert isinstance(settings.RERANK_ENABLED, bool)
+    assert isinstance(settings.DOCUMENT_SUMMARY_ENABLED, bool)
 
 
 def test_embedding_pacing_follows_the_quota_budget(monkeypatch):

@@ -169,19 +169,31 @@ class EmbeddingModel:
         return vectors
 
     def embed_query(self, query: str) -> list[float]:
-        """Embed a single search query."""
-        try:
-            return self.model.embed_query(query)
-        except Exception as exc:
-            raise _map_embedding_error(exc) from exc
+        """Embed a single search query, retrying transient failures."""
+        return self._with_retry(
+            lambda: self.model.embed_query(query),
+            "query embedding",
+        )
 
     def _embed_batch_with_retry(self, batch: list[str]) -> list[Any]:
+        return self._with_retry(
+            lambda: self.model.embed_documents(batch),
+            "embedding batch",
+        )
+
+    def _with_retry(self, operation: Any, description: str) -> Any:
+        """
+        Run a provider call, retrying the failures worth retrying.
+
+        A transient quota or network error should not fail a whole ingest
+        (or a whole question) when a short wait would clear it.
+        """
         attempts = max(1, settings.EMBEDDING_MAX_RETRIES)
         base_delay = max(0.0, settings.EMBEDDING_RETRY_BASE_SECONDS)
 
         for attempt in range(1, attempts + 1):
             try:
-                return self.model.embed_documents(batch)
+                return operation()
 
             except Exception as exc:
                 error = _map_embedding_error(exc)
@@ -197,7 +209,8 @@ class EmbeddingModel:
                 )
 
                 logger.warning(
-                    "embedding batch failed (attempt %s/%s): %s; retrying in %.1fs",
+                    "%s failed (attempt %s/%s): %s; retrying in %.1fs",
+                    description,
                     attempt,
                     attempts,
                     exc,

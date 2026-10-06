@@ -206,3 +206,47 @@ def test_embed_query_wraps_provider_errors():
 
     with pytest.raises(UpstreamRateLimitError):
         model.embed_query("hello")
+
+
+def test_embed_query_is_retried(monkeypatch):
+    monkeypatch.setattr(settings, "EMBEDDING_MAX_RETRIES", 4)
+
+    class FlakyQueryModel:
+        def __init__(self):
+            self.attempts = 0
+
+        def embed_query(self, query):
+            self.attempts += 1
+
+            if self.attempts <= 2:
+                raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+            return [0.1, 0.2]
+
+    model = _model()
+    flaky = FlakyQueryModel()
+    model.model = flaky
+
+    assert model.embed_query("q") == [0.1, 0.2]
+    assert flaky.attempts == 3
+
+
+def test_embed_query_gives_up_after_the_final_attempt(monkeypatch):
+    monkeypatch.setattr(settings, "EMBEDDING_MAX_RETRIES", 2)
+
+    class BrokenQueryModel:
+        def __init__(self):
+            self.attempts = 0
+
+        def embed_query(self, query):
+            self.attempts += 1
+            raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+    model = _model()
+    broken = BrokenQueryModel()
+    model.model = broken
+
+    with pytest.raises(UpstreamRateLimitError):
+        model.embed_query("q")
+
+    assert broken.attempts == 2

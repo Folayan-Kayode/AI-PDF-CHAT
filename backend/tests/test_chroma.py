@@ -243,6 +243,54 @@ def test_indexed_embedding_models_is_empty_for_an_empty_index(db):
     assert db.indexed_embedding_models() == set()
 
 
+def test_document_profile_returns_text_and_metadata(db):
+    db.add_documents(
+        ids=["a_1_0"],
+        documents=["Document profile:\nTitle: Principles of Information Security"],
+        embeddings=[[0.1, 0.2]],
+        metadatas=[
+            {
+                "document_id": "a",
+                "page": 1,
+                "chunk": 0,
+                "kind": "document_summary",
+            }
+        ],
+    )
+
+    profile = db.document_profile()
+
+    assert profile is not None
+    assert "Title: Principles of Information Security" in profile["text"]
+    assert profile["metadata"]["kind"] == "document_summary"
+
+
+def test_document_profile_is_none_without_a_profile_chunk(db):
+    db.add_documents(
+        ids=["a_1_1"],
+        documents=["ordinary content"],
+        embeddings=[[0.1, 0.2]],
+        metadatas=[{"document_id": "a", "page": 1, "chunk": 1, "kind": "content"}],
+    )
+
+    assert db.document_profile() is None
+
+
+def test_document_profile_is_none_for_an_empty_index(db):
+    assert db.document_profile() is None
+
+
+def test_document_profile_wraps_collection_errors(db, monkeypatch):
+    class BrokenCollection:
+        def get(self, *args, **kwargs):
+            raise RuntimeError("index is down")
+
+    monkeypatch.setattr(db, "collection", BrokenCollection())
+
+    with pytest.raises(RetrievalError):
+        db.document_profile()
+
+
 def test_reset_empties_the_index(db):
     db.add_documents(
         ids=["a_1_1"],

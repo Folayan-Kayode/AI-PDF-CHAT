@@ -213,4 +213,7 @@ for chat in st.session_state.messages:
         if chat["sources"]:
             with st.expander("Sources"):
                 for source in chat["sources"]:
-                    st.write(f"Page {source['page']} • Chunk {source['chunk']}")
+                    if source.get("kind") == "document_summary":
+                        st.write("Document profile")
+                    else:
+                        st.write(f"Page {source['page']} • Chunk {source['chunk']}")
