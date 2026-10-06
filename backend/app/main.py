@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
+# Client errors are expected traffic; anything else deserves a traceback.
+_TRACEBACK_STATUS_THRESHOLD = 500
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.API_VERSION,
@@ -62,14 +66,26 @@ async def request_context(request: Request, call_next: Any) -> Response:
 
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
-    """Map application errors onto their intended status code."""
-    level = logging.WARNING if exc.status_code < 500 else logging.ERROR
+    """
+    Map application errors onto their intended status code.
 
-    logger.log(level, "%s: %s", type(exc).__name__, exc.detail)
+    Server-side failures log the underlying cause, not just the generic
+    message, otherwise a 5xx cannot be diagnosed from the logs.
+    """
+    if exc.status_code >= _TRACEBACK_STATUS_THRESHOLD or exc.status_code == 429:
+        logger.error(
+            "%s: %s",
+            type(exc).__name__,
+            exc.detail,
+            exc_info=exc.__cause__ or exc,
+        )
+    else:
+        logger.warning("%s: %s", type(exc).__name__, exc.detail)
 
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail},
+        headers=exc.headers or None,
     )
 
 

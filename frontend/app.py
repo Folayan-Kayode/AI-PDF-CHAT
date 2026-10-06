@@ -9,11 +9,11 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
 
 REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "300"))
 
-st.set_page_config(
-    page_title="AI PDF Chat",
-    page_icon="📄",
-    layout="wide"
-)
+# A near-limit document needs many paced embedding batches, which can exceed
+# the chat timeout, so ingest gets its own, longer budget.
+UPLOAD_TIMEOUT_SECONDS = int(os.getenv("UPLOAD_TIMEOUT_SECONDS", "1800"))
+
+st.set_page_config(page_title="AI PDF Chat", page_icon="📄", layout="wide")
 
 # ----------------------------
 # Session State
@@ -22,8 +22,11 @@ st.set_page_config(
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if "uploaded_file_name" not in st.session_state:
-    st.session_state.uploaded_file_name = None
+if "uploaded_file_key" not in st.session_state:
+    st.session_state.uploaded_file_key = None
+
+if "failed_file_key" not in st.session_state:
+    st.session_state.failed_file_key = None
 
 # ----------------------------
 # Backend helpers
@@ -32,48 +35,70 @@ if "uploaded_file_name" not in st.session_state:
 
 def backend_error_message(response):
     """Turn an error response into something a user can act on."""
+    detail = None
+
     try:
         payload = response.json()
     except ValueError:
-        return f"Request failed with HTTP {response.status_code}."
+        payload = None
 
-    detail = payload.get("detail") if isinstance(payload, dict) else None
+    if isinstance(payload, dict):
+        detail = payload.get("detail")
 
     if isinstance(detail, list):
         # FastAPI validation errors arrive as a list of objects.
-        return "; ".join(
-            str(item.get("msg", item)) if isinstance(item, dict) else str(item)
-            for item in detail
+        message = "; ".join(
+            str(item.get("msg", item)) if isinstance(item, dict) else str(item) for item in detail
         )
+    elif detail:
+        message = str(detail)
+    else:
+        message = f"Request failed with HTTP {response.status_code}."
 
-    if detail:
-        return str(detail)
+    return message + retry_hint(response)
 
-    return f"Request failed with HTTP {response.status_code}."
+
+def retry_hint(response):
+    """Extra guidance for statuses the user can actually act on."""
+    if response.status_code == 429:
+        wait = response.headers.get("Retry-After")
+
+        if wait:
+            return f" Try again in about {wait} seconds."
+
+        return " The provider asked us to slow down; try again shortly."
+
+    if response.status_code == 503:
+        return " The service is temporarily unavailable."
+
+    if response.status_code == 409:
+        return " Another upload is still running."
+
+    return ""
 
 
 def unreachable_message(exc):
-    return (
-        f"Could not reach the backend at {BACKEND_URL}. "
-        f"Is it running? ({type(exc).__name__})"
-    )
+    return f"Could not reach the backend at {BACKEND_URL}. Is it running? ({type(exc).__name__})"
 
 
 def upload_pdf(uploaded_file):
     """Upload a PDF. Returns (ok, message)."""
-    files = {
-        "file": (
-            uploaded_file.name,
-            uploaded_file,
-            "application/pdf"
-        )
-    }
+    files = {"file": (uploaded_file.name, uploaded_file, "application/pdf")}
 
     try:
         response = requests.post(
             f"{BACKEND_URL}/upload/",
             files=files,
-            timeout=REQUEST_TIMEOUT_SECONDS,
+            timeout=UPLOAD_TIMEOUT_SECONDS,
+        )
+    except requests.Timeout:
+        # The request was delivered, so the backend may well be indexing it
+        # right now. Saying "unreachable" here would be a lie and would push
+        # the user into re-uploading a document that is already succeeding.
+        return False, (
+            f"The upload did not finish within {UPLOAD_TIMEOUT_SECONDS} seconds. "
+            "The backend may still be indexing it - wait a moment and check "
+            "before uploading again."
         )
     except requests.RequestException as exc:
         return False, unreachable_message(exc)
@@ -97,11 +122,11 @@ def ask_question(question):
     try:
         response = requests.post(
             f"{BACKEND_URL}/chat/",
-            json={
-                "question": question
-            },
+            json={"question": question},
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
+    except requests.Timeout:
+        return None, ("The question timed out. The model provider may be busy; please try again.")
     except requests.RequestException as exc:
         return None, unreachable_message(exc)
 
@@ -124,30 +149,35 @@ st.divider()
 # Upload Section
 # ----------------------------
 
-uploaded_file = st.file_uploader(
-    "Choose a PDF",
-    type=["pdf"]
-)
+uploaded_file = st.file_uploader("Choose a PDF", type=["pdf"])
 
-# Automatically upload only once
-if (
-    uploaded_file is not None
-    and uploaded_file.name != st.session_state.uploaded_file_name
-):
+if uploaded_file is not None:
+    # Keyed on name and size, so a different document that happens to reuse
+    # a previous name is still sent, and so a failure can be retried.
+    file_key = (uploaded_file.name, uploaded_file.size)
 
-    with st.spinner("Uploading PDF..."):
+    if st.session_state.failed_file_key == file_key:
+        st.error("The last upload attempt for this file failed.")
 
-        ok, message = upload_pdf(uploaded_file)
+        if st.button("Retry upload"):
+            st.session_state.failed_file_key = None
 
-    if ok:
+            st.rerun()
 
-        st.success(message)
+    elif file_key != st.session_state.uploaded_file_key:
+        with st.spinner("Uploading PDF..."):
+            ok, message = upload_pdf(uploaded_file)
 
-        st.session_state.uploaded_file_name = uploaded_file.name
+        if ok:
+            st.success(message)
 
-    else:
+            st.session_state.uploaded_file_key = file_key
+            st.session_state.failed_file_key = None
 
-        st.error(message)
+        else:
+            st.error(message)
+
+            st.session_state.failed_file_key = file_key
 
 st.divider()
 
@@ -155,28 +185,18 @@ st.divider()
 # Chat Section
 # ----------------------------
 
-question = st.chat_input(
-    "Ask a question about your PDF..."
-)
+question = st.chat_input("Ask a question about your PDF...")
 
 if question:
-
     with st.spinner("Model is thinking..."):
-
         answer, error = ask_question(question)
 
     if error:
-
         st.error(error)
 
     else:
-
         st.session_state.messages.append(
-            {
-                "question": question,
-                "answer": answer["answer"],
-                "sources": answer["sources"]
-            }
+            {"question": question, "answer": answer["answer"], "sources": answer["sources"]}
         )
 
 # ----------------------------
@@ -184,20 +204,13 @@ if question:
 # ----------------------------
 
 for chat in st.session_state.messages:
-
     with st.chat_message("user"):
         st.write(chat["question"])
 
     with st.chat_message("assistant"):
-
         st.write(chat["answer"])
 
         if chat["sources"]:
-
             with st.expander("Sources"):
-
                 for source in chat["sources"]:
-
-                    st.write(
-                        f"Page {source['page']} • Chunk {source['chunk']}"
-                    )
+                    st.write(f"Page {source['page']} • Chunk {source['chunk']}")

@@ -56,9 +56,7 @@ class PDFLoader:
             raise
 
         except (PdfReadError, OSError, ValueError) as exc:
-            raise PDFProcessingError(
-                "The file could not be read as a PDF."
-            ) from exc
+            raise PDFProcessingError("The file could not be read as a PDF.") from exc
 
         if not pages:
             raise EmptyPDFError("The PDF contains no pages.")

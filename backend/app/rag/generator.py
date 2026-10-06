@@ -41,8 +41,7 @@ class DeepSeekGenerator:
             )
         except openai.RateLimitError as exc:
             raise UpstreamRateLimitError(
-                "The generation provider rate limit was reached. "
-                "Try again shortly.",
+                "The generation provider rate limit was reached. Try again shortly.",
                 service="generation",
             ) from exc
         except openai.APITimeoutError as exc:

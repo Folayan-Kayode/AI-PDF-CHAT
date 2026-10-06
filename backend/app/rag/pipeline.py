@@ -4,12 +4,11 @@ from functools import lru_cache
 from typing import Any
 
 from app.core.config import settings
+from app.core.exceptions import UpstreamUnavailableError
 from app.rag.generator import DeepSeekGenerator, get_generator
 from app.rag.retriever import Retriever
 
-NOT_FOUND_MESSAGE = (
-    "I couldn't find that information in the uploaded document."
-)
+NOT_FOUND_MESSAGE = "I couldn't find that information in the uploaded document."
 
 # The document text is placed inside an explicit delimiter and described as
 # untrusted data, so instructions embedded in a PDF are not treated as
@@ -34,16 +33,46 @@ Question: {question}
 Answer:"""
 
 
+def _normalise(text: str) -> str:
+    """Collapse whitespace, drop surrounding punctuation, lowercase."""
+    return " ".join((text or "").split()).strip(" .").lower()
+
+
+_NOT_FOUND_NORMALISED = _normalise(NOT_FOUND_MESSAGE)
+
+
+def _is_abstention(answer: str) -> bool:
+    """
+    Whether the model declined to answer.
+
+    The whole normalised answer must match the not-found sentence (or start
+    with it). A substring test would misread a genuine answer that merely
+    quotes the sentence, e.g. "Page 3 shows 'I couldn't find that
+    information...' as an example", and wrongly drop its sources.
+    """
+    normalised = _normalise(answer)
+
+    if not normalised:
+        return False
+
+    return normalised == _NOT_FOUND_NORMALISED or normalised.startswith(_NOT_FOUND_NORMALISED)
+
+
 def _sanitise(document_text: str) -> str:
     """Stop document text from closing the delimiter early."""
     return document_text.replace("</document>", "<\\/document>")
 
 
-def _build_context(documents: list[str], max_chars: int) -> str:
+def _build_context(
+    documents: list[str],
+    max_chars: int,
+) -> tuple[str, int]:
     """
     Join retrieved chunks, stopping once the character budget is spent.
 
-    Keeps a large retrieval from producing an oversized (and costly) prompt.
+    Returns the context and the number of chunks actually included, so the
+    caller can report sources that were really sent to the model rather than
+    every chunk that was retrieved.
     """
     parts: list[str] = []
     used = 0
@@ -55,7 +84,7 @@ def _build_context(documents: list[str], max_chars: int) -> str:
         parts.append(document)
         used += len(document)
 
-    return "\n\n".join(parts)[:max_chars]
+    return "\n\n".join(parts)[:max_chars], len(parts)
 
 
 class RAGPipeline:
@@ -83,20 +112,29 @@ class RAGPipeline:
                 "sources": [],
             }
 
-        context = _sanitise(
-            _build_context(documents, settings.MAX_CONTEXT_CHARS)
+        context, included_chunks = _build_context(
+            documents,
+            settings.MAX_CONTEXT_CHARS,
         )
 
         prompt = PROMPT_TEMPLATE.format(
             not_found=NOT_FOUND_MESSAGE,
-            context=context,
+            context=_sanitise(context),
             question=question,
         )
 
         answer = self.generator.generate(prompt)
 
-        # Only return sources when the model actually answered the question.
-        if NOT_FOUND_MESSAGE.lower() in (answer or "").lower():
+        if not (answer or "").strip():
+            # An empty response is a provider problem, not a grounded
+            # answer: reporting success would show the user an empty bubble
+            # with citations attached to nothing.
+            raise UpstreamUnavailableError(
+                "The generation provider returned an empty answer.",
+                service="generation",
+            )
+
+        if _is_abstention(answer):
             return {
                 "answer": answer,
                 "sources": [],
@@ -104,7 +142,7 @@ class RAGPipeline:
 
         return {
             "answer": answer,
-            "sources": metadata,
+            "sources": metadata[:included_chunks],
         }
 
 

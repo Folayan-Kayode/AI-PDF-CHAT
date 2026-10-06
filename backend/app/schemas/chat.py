@@ -15,8 +15,6 @@ class ChatRequest(BaseModel):
             raise ValueError("The question must not be empty.")
 
         if len(question) > MAX_QUESTION_LENGTH:
-            raise ValueError(
-                f"The question must be at most {MAX_QUESTION_LENGTH} characters."
-            )
+            raise ValueError(f"The question must be at most {MAX_QUESTION_LENGTH} characters.")
 
         return question

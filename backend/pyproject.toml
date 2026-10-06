@@ -1,3 +1,9 @@
+[project]
+name = "ai-pdf-chat-backend"
+version = "1.0.0"
+description = "Single-document RAG chat over an uploaded PDF."
+requires-python = ">=3.11"
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -15,9 +21,22 @@ select = [
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --cov=app --cov-report=term-missing --cov-fail-under=75"
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]

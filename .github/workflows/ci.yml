@@ -31,11 +31,15 @@ jobs:
       - name: Lint with ruff
         run: ruff check .
 
-      - name: Run tests
+      - name: Check formatting with ruff
+        run: ruff format --check .
+
+      - name: Run tests with coverage
+        # Coverage floor is configured in pyproject.toml (--cov-fail-under).
         run: pytest
 
   frontend:
-    name: Frontend (syntax check)
+    name: Frontend (lint + syntax check)
     runs-on: ubuntu-latest
 
     defaults:
@@ -48,6 +52,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff==0.16.9
+
+      - name: Lint with ruff
+        run: ruff check app.py
+
+      - name: Check formatting with ruff
+        run: ruff format --check app.py
 
       - name: Compile check
         run: python -m compileall -q app.py

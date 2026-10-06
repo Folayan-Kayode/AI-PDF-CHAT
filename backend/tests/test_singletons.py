@@ -1,5 +1,6 @@
 """The clients are created once per process, not per request."""
 
+
 def test_chroma_handle_is_cached():
     from app.database.chroma import get_database
 

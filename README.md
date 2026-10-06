@@ -3,45 +3,81 @@
 Single-document RAG chat over an uploaded PDF, built with FastAPI, Streamlit, DeepSeek (generation), Gemini (embeddings), ChromaDB, and LangChain.
 
 ## What it does today
-- Upload one PDF via `POST /upload/` (single-document mode: new upload replaces the index).
-- Validates upload: `.pdf` extension, `%PDF-` header, empty-file check, size limit, path-traversal-safe filename.
+
+**Ingestion**
+- Upload one PDF via `POST /upload/` (single-document mode: a new upload replaces the index).
+- Validates the `.pdf` extension, the real `%PDF-` header, the file size, the filename length, and normalises the filename identically on every OS.
+- Writes the upload to a staging file and only moves it into place once it is proven to be a PDF, so a bad upload cannot overwrite a good copy.
 - Detects duplicates by SHA-256 content hash and skips re-embedding.
 - Rejects encrypted, empty, scanned/image-only, corrupt, and oversized documents with a specific `4xx` and a readable message (no OCR yet).
-- Splits with `RecursiveCharacterTextSplitter` (1000/200), skipping empty chunks.
-- Embeds in small batches with a pause between them, so a large document does not trip the provider's per-minute quota.
-- Stores `sha256_page_chunk` IDs plus `{page, chunk, document_id}` metadata in a persistent Chroma index.
+- Serialises ingestion: a second concurrent upload is rejected with `409` instead of interleaving and producing a mixed index.
+- Embeds in paced batches and retries a transient failure with backoff, honouring the provider's `Retry-After`, so one quota blip does not discard the whole document.
+- Chunks the document, then writes the vectors into a staging collection and swaps it in. A failed write leaves the previously indexed document queryable, and the error says so.
+- Records the embedding model and schema version in each chunk's metadata.
+
+**Answering**
 - Chat via `POST /chat/` (`question` non-empty, max 2000 chars).
-- Retrieves the top-k chunks with Gemini embeddings, answers with DeepSeek (`deepseek-chat`) using a context-only prompt.
-- Treats document text as untrusted input: it is delimited, and the model is told to ignore instructions found inside it. The context is truncated to a configurable character budget.
-- Returns `I couldn't find that information...` with empty `sources` when the question is not answerable from the document.
-- Maps upstream failures to real status codes (`503`/`504`) as JSON instead of a bare `500` text response.
-- Streamlit UI: file uploader, chat history, conditional Sources expander (`Page X • Chunk Y`), and a clear message when the backend is unreachable.
-- Structured logs with a per-request `X-Request-ID` and latency for every request.
-- `GET /health` reports the index size and models, and returns `503` if the vector store is unreachable.
+- Retrieves the top-k chunks with Gemini embeddings and answers with DeepSeek (`deepseek-chat`) using a context-only prompt.
+- Detects an index built with a different embedding model and treats it as empty rather than returning meaningless neighbours.
+- Treats document text as untrusted: it is delimited, closing delimiters are escaped, and the model is told to ignore instructions found inside it.
+- Truncates context to a character budget and reports only the sources that were actually sent to the model.
+- Returns `I couldn't find that information...` with empty `sources` when unanswerable; abstention detection matches the whole answer, so an answer that merely quotes the sentence keeps its sources.
+
+**Operations**
+- Maps failures to real status codes as JSON: `409` concurrent ingest, `413` too large, `429` rate limit with `Retry-After`, `502`/`503`/`504` upstream failures.
+- Logs every request with an `X-Request-ID` and its latency, and logs the underlying cause of a `5xx` so it can be diagnosed.
+- `GET /health` is a cheap liveness check; `GET /ready` reports readiness, `degraded` when the index is empty, and `503` only when the store is unreachable. `GET /ready?deep=true` probes the embedding provider, cached for `HEALTH_DEEP_CACHE_SECONDS`.
+- Streamlit UI: file uploader, chat history, conditional Sources expander, clear messages when the backend is unreachable or rate limits, and a retry button for a failed upload.
+
+## Endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/` | Project, version, generation model. |
+| `GET` | `/health` | Liveness. Cheap, does not touch the vector store. |
+| `GET` | `/ready` | Readiness, index size, embedding-model match. `?deep=true` also probes embeddings. |
+| `POST` | `/upload/` | Store and index one PDF. |
+| `POST` | `/chat/` | Answer a question from the indexed document. |
 
 ## Configuration
-Copy `.env.example` to `.env`. Both API keys are required and the app fails at startup if either is missing.
+
+Copy `.env.example` to `.env`. Both API keys are required and the app fails at startup if either is missing. Every setting below is mirrored in `.env.example`, and a test fails if the two drift apart.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `GOOGLE_API_KEY` | — | Required. Used for embeddings. |
-| `DEEPSEEK_API_KEY` | — | Required. Used for answer generation. |
+| `GOOGLE_API_KEY` | — | Required. Embeddings. |
+| `DEEPSEEK_API_KEY` | — | Required. Generation. |
 | `MODEL` | `deepseek-chat` | DeepSeek generation model. |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | OpenAI-compatible endpoint. |
+| `GENERATION_TIMEOUT_SECONDS` | `60` | Timeout for the generation call. |
 | `EMBEDDING_MODEL` | `gemini-embedding-2` | Google embedding model. |
+| `EMBEDDING_SCHEMA_VERSION` | `1` | Bump when the embedding vector space changes. |
+| `EMBEDDING_BATCH_SIZE` | `64` | Chunks per embedding request. |
+| `EMBEDDING_BATCH_DELAY_SECONDS` | `0.25` | Pause between embedding batches. |
+| `EMBEDDING_MAX_RETRIES` | `4` | Attempts per embedding batch. |
+| `EMBEDDING_RETRY_BASE_SECONDS` | `1.0` | Backoff base between retries. |
+| `EMBEDDING_REQUESTS_PER_MINUTE` | `90` | Budget the pacing delay is derived from. |
+| `UPLOAD_DIRECTORY` | `uploads` | Where uploads are stored. |
+| `CHROMA_DIRECTORY` | `chroma_db` | Vector store location. |
+| `CHROMA_WRITE_BATCH_SIZE` | `200` | Chunks per index write. |
+| `CHROMA_WRITE_MAX_RETRIES` | `3` | Attempts per index write batch. |
+| `CHROMA_WRITE_RETRY_BASE_SECONDS` | `0.5` | Backoff base between retries. |
 | `MAX_UPLOAD_SIZE_MB` | `25` | Upload size limit. |
 | `MAX_PAGES_PER_DOCUMENT` | `300` | Rejects longer PDFs during loading. |
 | `MAX_CHUNKS_PER_DOCUMENT` | `1500` | Rejects documents that chunk too large. |
-| `MAX_CONTEXT_CHARS` | `12000` | Prompt context budget. |
+| `MAX_FILENAME_LENGTH` | `200` | Rejects absurd filenames with `400`. |
+| `INGESTION_LOCK_TIMEOUT_SECONDS` | `0` | `0` rejects a concurrent upload immediately. |
 | `RETRIEVAL_TOP_K` | `5` | Chunks retrieved per question. |
-| `EMBEDDING_BATCH_SIZE` | `64` | Chunks per embedding request. |
-| `EMBEDDING_BATCH_DELAY_SECONDS` | `0.25` | Pause between embedding batches. |
-| `GENERATION_TIMEOUT_SECONDS` | `60` | Timeout for the generation call. |
+| `MAX_CONTEXT_CHARS` | `12000` | Prompt context budget. |
 | `LOG_LEVEL` | `INFO` | Root log level. |
+| `HEALTH_DEEP_CACHE_SECONDS` | `30` | Cache for the `?deep=true` provider probe. |
 
-The frontend reads `BACKEND_URL` (default `http://127.0.0.1:8000`) and `REQUEST_TIMEOUT_SECONDS` from its own environment.
+The frontend reads its own environment: `BACKEND_URL` (default `http://127.0.0.1:8000`), `REQUEST_TIMEOUT_SECONDS` (default `300`), and `UPLOAD_TIMEOUT_SECONDS` (default `1800`, because a large document needs many paced batches).
+
+Paths are resolved relative to the working directory, so start each service from its own folder as shown below.
 
 ## Run
+
 Requires Python 3.11+ (CI runs 3.12).
 
 1. Copy `.env.example` to `.env`, set `GOOGLE_API_KEY` (embeddings) and `DEEPSEEK_API_KEY` (generation).
@@ -50,18 +86,23 @@ Requires Python 3.11+ (CI runs 3.12).
 4. Open http://127.0.0.1:8501
 
 ## Tests and lint
+
 From `backend/`:
 
 ```bash
 pip install -r requirements-dev.txt
 ruff check .
-pytest
+ruff format --check .
+pytest          # includes a coverage floor of 75% for app/
 ```
 
-Tests mock the LLM, so they run without API keys or network access.
+Tests mock the LLM and the embedding provider, so they run without API keys or network access.
 
-## What it does not do yet
-- No streaming responses, conversation memory, or multi-document selection.
-- No authentication, rate limiting, or per-user isolation.
-- No Dockerfiles or working `docker-compose.yml`.
-- No OCR for scanned PDFs, and no automated retrieval/answer evaluation yet.
+## Known limitations
+
+- **Run a single worker.** Ingestion is serialised with a process-wide lock and ChromaDB is used in embedded (file) mode. Multiple uvicorn workers would each hold their own client over one directory and could interleave resets. Running multiple workers requires moving Chroma to server mode.
+- **Changing `EMBEDDING_MODEL` invalidates the index.** Existing vectors are not re-embedded; the mismatch is detected and reported as `degraded` by `/ready` instead of being queried, so re-upload the document.
+- **No OCR.** Scanned or image-only PDFs are rejected, not transcribed.
+- **Single document.** A new upload replaces the previous index; there is no document list or per-document selection yet.
+- **No Docker yet.** There are no Dockerfiles or compose file; containerisation is planned for a later phase.
+- No streaming responses, conversation memory, authentication, or rate limiting for callers.
