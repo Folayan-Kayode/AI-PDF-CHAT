@@ -5,6 +5,7 @@ import logging
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.core.exceptions import (
     DocumentTooLargeError,
     IngestionInProgressError,
@@ -63,7 +64,7 @@ def test_ready_returns_503_when_the_index_is_unavailable(
         def count(self):
             raise RuntimeError("index is down")
 
-        def indexed_embedding_models(self, sample_size=200):
+        def indexed_fingerprint(self, sample_size=200):
             raise RuntimeError("index is down")
 
     monkeypatch.setattr(health_module, "get_database", lambda: BrokenDatabase())
@@ -78,11 +79,24 @@ def test_ready_reports_an_embedding_model_mismatch(client: TestClient, monkeypat
     from app.api import health as health_module
 
     class MismatchedDatabase:
+        def __init__(self):
+            self.collection = type(
+                "Collection",
+                (),
+                {"get": lambda self, **kwargs: {"metadatas": []}},
+            )()
+
         def count(self):
             return 12
 
-        def indexed_embedding_models(self, sample_size=200):
-            return {"some-other-model"}
+        def indexed_fingerprint(self, sample_size=200):
+            return {
+                "embedding_models": {"some-other-model"},
+                "schema_versions": set(),
+            }
+
+        def space_matches(self):
+            return True
 
     monkeypatch.setattr(health_module, "get_database", lambda: MismatchedDatabase())
 
@@ -91,6 +105,78 @@ def test_ready_reports_an_embedding_model_mismatch(client: TestClient, monkeypat
     assert body["embedding_model_match"] is False
     assert body["status"] == "degraded"
     assert body["indexed_embedding_models"] == ["some-other-model"]
+
+
+def test_ready_reports_a_vector_space_mismatch(client: TestClient, monkeypatch):
+    from app.api import health as health_module
+
+    class WrongSpaceDatabase:
+        def __init__(self):
+            self.collection = type(
+                "Collection",
+                (),
+                {"get": lambda self, **kwargs: {"metadatas": []}},
+            )()
+
+        def count(self):
+            return 12
+
+        def indexed_fingerprint(self, sample_size=200):
+            return {"embedding_models": set(), "schema_versions": set()}
+
+        def space_matches(self):
+            return False
+
+    monkeypatch.setattr(health_module, "get_database", lambda: WrongSpaceDatabase())
+
+    body = client.get("/ready").json()
+
+    assert body["vector_space_match"] is False
+    assert body["status"] == "degraded"
+
+
+def test_ready_describes_each_document(client: TestClient, monkeypatch):
+    from app.api import health as health_module
+
+    class OneDocumentDatabase:
+        def __init__(self):
+            metadata = {
+                "document_id": "doc-a",
+                "embedding_model": settings.EMBEDDING_MODEL,
+                "schema_version": settings.EMBEDDING_SCHEMA_VERSION,
+            }
+
+            self.collection = type(
+                "Collection",
+                (),
+                {"get": lambda self, **kwargs: {"metadatas": [metadata, metadata]}},
+            )()
+
+        def count(self):
+            return 2
+
+        def indexed_fingerprint(self, sample_size=200):
+            return {
+                "embedding_models": {settings.EMBEDDING_MODEL},
+                "schema_versions": {settings.EMBEDDING_SCHEMA_VERSION},
+            }
+
+        def space_matches(self):
+            return True
+
+    monkeypatch.setattr(health_module, "get_database", lambda: OneDocumentDatabase())
+
+    body = client.get("/ready").json()
+
+    assert body["status"] == "ready"
+    assert body["documents"] == [
+        {
+            "document_id": "doc-a",
+            "chunks": 2,
+            "embedding_model": settings.EMBEDDING_MODEL,
+            "schema_version": settings.EMBEDDING_SCHEMA_VERSION,
+        }
+    ]
 
 
 def test_ready_deep_probe_is_cached(client: TestClient, monkeypatch):

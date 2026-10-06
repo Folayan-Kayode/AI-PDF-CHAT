@@ -1,0 +1,213 @@
+[
+  {
+    "name": "sheet",
+    "description": "2-page form, no bookmarks",
+    "skipped": false,
+    "results": [
+      {
+        "question": "How often must the site induction be renewed?",
+        "answer": "Every 12 months. [p.1]",
+        "answerable": true,
+        "abstained": false,
+        "correct": true,
+        "retrieved_chunks": 2,
+        "considered_candidates": 2,
+        "best_distance": 0.18688762187957764,
+        "profile_used": true
+      },
+      {
+        "question": "Who is the site manager?",
+        "answer": "The site manager is D. Okonkwo. [p.1]",
+        "answerable": true,
+        "abstained": false,
+        "correct": true,
+        "retrieved_chunks": 2,
+        "considered_candidates": 2,
+        "best_distance": 0.30049002170562744,
+        "profile_used": true
+      },
+      {
+        "question": "What is the recipe for a chocolate cake?",
+        "answer": "I couldn't find that information in the uploaded document.",
+        "answerable": false,
+        "abstained": true,
+        "correct": true,
+        "retrieved_chunks": 2,
+        "considered_candidates": 2,
+        "best_distance": 0.4866529107093811,
+        "profile_used": true
+      }
+    ]
+  },
+  {
+    "name": "table",
+    "description": "table of sensor readings",
+    "skipped": false,
+    "results": [
+      {
+        "question": "What was the temperature on 3 March 2024?",
+        "answer": "14.5 [p.1]",
+        "answerable": true,
+        "abstained": false,
+        "correct": true,
+        "retrieved_chunks": 2,
+        "considered_candidates": 2,
+        "best_distance": 0.27833032608032227,
+        "profile_used": true
+      },
+      {
+        "question": "Which sensor was installed on 5 March 2024?",
+        "answer": "Sensor N-02 was installed on 5 March 2024 [p.1].",
+        "answerable": true,
+        "abstained": false,
+        "correct": true,
+        "retrieved_chunks": 2,
+        "considered_candidates": 2,
+        "best_distance": 0.20705777406692505,
+        "profile_used": true
+      },
+      {
+        "question": "What is the capital of Mongolia?",
+        "answer": "I couldn't find that information in the uploaded document.",
+        "answerable": false,
+        "abstained": true,
+        "correct": true,
+        "retrieved_chunks": 2,
+        "considered_candidates": 2,
+        "best_distance": 0.5015217065811157,
+        "profile_used": true
+      }
+    ]
+  },
+  {
+    "name": "german",
+    "description": "1-page German document",
+    "skipped": false,
+    "results": [
+      {
+        "question": "Wie oft erfolgt die Wartung der Heizungsanlage?",
+        "answer": "Die Wartung erfolgt alle sechs Monate durch einen Techniker. [p.1]",
+        "answerable": true,
+        "abstained": false,
+        "correct": true,
+        "retrieved_chunks": 2,
+        "considered_candidates": 2,
+        "best_distance": 0.26633548736572266,
+        "profile_used": true
+      },
+      {
+        "question": "Was ist die Hauptstadt der Mongolei?",
+        "answer": "I couldn't find that information in the uploaded document.",
+        "answerable": false,
+        "abstained": true,
+        "correct": true,
+        "retrieved_chunks": 2,
+        "considered_candidates": 2,
+        "best_distance": 0.5465204119682312,
+        "profile_used": true
+      }
+    ]
+  },
+  {
+    "name": "standard",
+    "description": "157-page technical standard",
+    "skipped": false,
+    "results": [
+      {
+        "question": "What is this document about?",
+        "answer": "This document is the CEDIA/CTA-RP22 Immersive Audio Design Recommended Practice, which provides guidance for the design and specification of audio reproduction within private entertainment spaces, helping industry professionals deliver optimal performance for equipment and space [document][p.3]. It outlines audio design and engineering parameters relevant to proper audio performance in a private entertainment space, aiming to render content as close as possible to the intent of the content creator [p.12].",
+        "answerable": true,
+        "abstained": false,
+        "correct": true,
+        "retrieved_chunks": 5,
+        "considered_candidates": 9,
+        "best_distance": 0.3494846820831299,
+        "profile_used": true
+      },
+      {
+        "question": "What is the title of this document?",
+        "answer": "The title of this document is CEDIA/CTA-RP22 Immersive Audio Design Recommended Practice [document].",
+        "answerable": true,
+        "abstained": false,
+        "correct": true,
+        "retrieved_chunks": 5,
+        "considered_candidates": 7,
+        "best_distance": 0.3459441661834717,
+        "profile_used": true
+      },
+      {
+        "question": "List the sections of this document.",
+        "answer": "The document's sections include [document]:  - Foreword - Intellectual Property - Contents - Visual Table of Contents / Flowchart - i. Introduction [p.5] - ii. Scope [p.5] - iii. Contributors [p.5] - iv. References [p.5]   - Normative References [p.5]   - Informative References [p.5]   - References Acquisition [p.5] - v. Compliance Notation [p.5] - vi. Unit Conversions [p.5] - Section 1: GLOSSARY   - 1.1 Definitions [p.5]   - 1.2 Symbols and Abbreviations - Section 2: IMMERSIVE AUDIO OVERVIEW   - 2.1 Describing Immersive Audio Systems   - 2.2 Channel-based vs Object-based Audio     - 2.2.1 Beds and Active Objects     - 2.2.2 Mixing Room Audio Steering     - 2.2.3 Channel-based Content in an Immersive Audio Delivery Format     - 2.2.4 Rendering Objects - Section 3: AUDIO PERFORMANCE OBJECTIVES AND LEVELS   - 3.1 Performance Objectives for Audio     - 3.1.1 Dialog Clarity     - 3.1.2 Localization Accuracy     - 3.1.3 Sound Movement     - 3.1.4 Sound Field Immersion and Envelopment     - 3.1.5 Tonal Balance     - 3.1.6 Dynamic Range     - 3.1.7 Bass Impact     - 3.1.8 Audience Coverage     - 3.1.9 Sound Isolation   - 3.2 Immersive Audio Performance Levels     - 3.2.1 Individual Seating Posit  Additional sections listed in the contents include \"11 CALIBRation of Electro-Acoustics\" with 11.1 Room Performance Optimization [p.9] and 11.2 EQ Recommended Practice [p.9], as well as Appendix A [p.9], Appendix B [p.9], Appendix C [p.9], and the Bibliography [p.10].",
+        "answerable": true,
+        "abstained": false,
+        "correct": true,
+        "retrieved_chunks": 5,
+        "considered_candidates": 7,
+        "best_distance": 0.33068060874938965,
+        "profile_used": true
+      },
+      {
+        "question": "What is the recipe for a chocolate cake?",
+        "answer": "I couldn't find that information in the uploaded document.",
+        "answerable": false,
+        "abstained": true,
+        "correct": true,
+        "retrieved_chunks": 5,
+        "considered_candidates": 8,
+        "best_distance": 0.47377413511276245,
+        "profile_used": true
+      }
+    ]
+  },
+  {
+    "name": "book",
+    "description": "658-page textbook",
+    "skipped": false,
+    "results": [
+      {
+        "question": "What is this book about?",
+        "answer": "This book, *Principles of Information Security, 4th ed.* by Michael E. Whitman [document], provides a broad review of the entire field of information security, covering the terminology of the field, the history of the discipline, and strategies for managing an information security program [p.22]. Its essential tenet is that information security in the modern organization is a problem for management to solve, not one that technology alone can address [p.22]. It establishes a foundation for understanding information security by defining key terms, explaining essential concepts, and reviewing the origins of the field [p.22].",
+        "answerable": true,
+        "abstained": false,
+        "correct": true,
+        "retrieved_chunks": 5,
+        "considered_candidates": 10,
+        "best_distance": 0.3307400345802307,
+        "profile_used": true
+      },
+      {
+        "question": "List the chapters of this book.",
+        "answer": "Based on the table of contents passages provided, the chapters listed are:  - CHAPTER 1: Introduction to Information Security [p.11] - CHAPTER 5: Planning for Security [p.9] - CHAPTER 6: Security Technology: Firewalls and VPNs [p.9] - CHAPTER 7: Security Technology: Intrusion Detection and Prevention Systems, and Other Security Tools [p.9] - CHAPTER 8: Cryptography [p.9] - CHAPTER 9: Physical Security [p.9] - CHAPTER 10: Implementing Information Security [p.9] - CHAPTER 11 [p.9]  Note: Chapters 2, 3, and 4 are not shown in the supplied material.",
+        "answerable": true,
+        "abstained": false,
+        "correct": true,
+        "retrieved_chunks": 5,
+        "considered_candidates": 7,
+        "best_distance": 0.29556185007095337,
+        "profile_used": true
+      },
+      {
+        "question": "What is the title of this book?",
+        "answer": "Principles of Information Security, 4th ed. [document]",
+        "answerable": true,
+        "abstained": false,
+        "correct": true,
+        "retrieved_chunks": 5,
+        "considered_candidates": 8,
+        "best_distance": 0.33865100145339966,
+        "profile_used": true
+      },
+      {
+        "question": "What is the capital of Mongolia?",
+        "answer": "I couldn't find that information in the uploaded document.",
+        "answerable": false,
+        "abstained": true,
+        "correct": true,
+        "retrieved_chunks": 5,
+        "considered_candidates": 9,
+        "best_distance": 0.4649287462234497,
+        "profile_used": true
+      }
+    ]
+  }
+]

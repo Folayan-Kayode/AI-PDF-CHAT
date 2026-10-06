@@ -232,13 +232,17 @@ def test_file_hash_is_stable_and_content_specific(fixtures_dir: Path, tmp_path: 
 class FakeSummarizer:
     """Stands in for the ingest-time profile builder."""
 
-    def __init__(self, profile: str | None = "Title: Example\nPublisher: Cengage"):
-        self.profile = profile
+    def __init__(self, text: str | None = "Title: Example\nPublisher: Cengage"):
+        self.text = text
         self.pages_seen: list[list[dict]] = []
+        self.outlines_seen: list = []
+        self.metadata_seen: list = []
 
-    def summarize(self, pages):
+    def profile(self, pages, outline=None, metadata=None):
         self.pages_seen.append(pages)
-        return self.profile
+        self.outlines_seen.append(outline)
+        self.metadata_seen.append(metadata)
+        return self.text
 
 
 def test_profile_chunk_is_indexed_first(fixtures_dir: Path, database: FakeDatabase):

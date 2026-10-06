@@ -196,7 +196,12 @@ if question:
 
     else:
         st.session_state.messages.append(
-            {"question": question, "answer": answer["answer"], "sources": answer["sources"]}
+            {
+                "question": question,
+                "answer": answer["answer"],
+                "sources": answer["sources"],
+                "retrieval": answer.get("retrieval") or {},
+            }
         )
 
 # ----------------------------
@@ -208,6 +213,16 @@ for chat in st.session_state.messages:
         st.write(chat["question"])
 
     with st.chat_message("assistant"):
+        retrieval = chat.get("retrieval") or {}
+
+        # A profile-only answer reads as grounded when it is not: nothing came
+        # from the document body, so say so.
+        if retrieval.get("retrieved_chunks") == 0 and retrieval.get("profile_used"):
+            st.warning(
+                "No passages matched this question, so the answer comes from "
+                "the document profile alone."
+            )
+
         st.write(chat["answer"])
 
         if chat["sources"]:
@@ -215,5 +230,12 @@ for chat in st.session_state.messages:
                 for source in chat["sources"]:
                     if source.get("kind") == "document_summary":
                         st.write("Document profile")
+                    elif source.get("page_end", source.get("page")) > source.get(
+                        "page_start", source.get("page", 0)
+                    ):
+                        st.write(
+                            f"Pages {source.get('page_start')}–{source.get('page_end')}"
+                            f" • Chunk {source['chunk']}"
+                        )
                     else:
                         st.write(f"Page {source['page']} • Chunk {source['chunk']}")

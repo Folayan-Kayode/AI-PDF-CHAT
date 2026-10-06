@@ -1,5 +1,6 @@
-"""Tests for retrieval: shape, top-k, threshold, rewriting and reranking."""
+"""Tests for retrieval: shape, relative selection, scoping and reranking."""
 
+from statistics import median
 from typing import Any
 
 from app.core.config import settings
@@ -35,21 +36,36 @@ class FakeDatabase:
         self,
         results: list[dict[str, Any]] | None = None,
         models: set[str] | None = None,
+        versions: set[int] | None = None,
+        space_matches: bool = True,
         profile: dict[str, Any] | None = None,
     ):
         self.results = results if results is not None else [_result()]
         self.models = models if models is not None else set()
+        self.versions = versions if versions is not None else set()
+        self._space_matches = space_matches
         self.profile = profile
-        self.searches: list[int] = []
+        self.profile_scopes: list[str | None] = []
+        self.searches: list[dict[str, Any]] = []
+
+    def indexed_fingerprint(self, sample_size: int = 200) -> dict[str, set]:
+        return {"embedding_models": self.models, "schema_versions": self.versions}
 
     def indexed_embedding_models(self, sample_size: int = 200) -> set[str]:
         return self.models
 
-    def document_profile(self) -> dict[str, Any] | None:
+    def indexed_schema_versions(self, sample_size: int = 200) -> set[int]:
+        return self.versions
+
+    def space_matches(self) -> bool:
+        return self._space_matches
+
+    def document_profile(self, document_id: str | None = None):
+        self.profile_scopes.append(document_id)
         return self.profile
 
-    def search(self, embedding, n_results: int = 5) -> dict[str, Any]:
-        self.searches.append(n_results)
+    def search(self, embedding, n_results: int = 5, document_id=None) -> dict[str, Any]:
+        self.searches.append({"n_results": n_results, "document_id": document_id})
 
         index = len(self.searches) - 1
 
@@ -84,21 +100,23 @@ def _retriever(
     embedder: FakeEmbedder | None = None,
     rewriter: FakeRewriter | None = None,
     reranker: FakeReranker | None = None,
+    document_id: str | None = None,
 ) -> Retriever:
     return Retriever(
         embedding_model=embedder or FakeEmbedder(),
         database=database,
         query_rewriter=rewriter or FakeRewriter(),
         reranker=reranker or FakeReranker(),
+        document_id=document_id,
     )
 
 
 # --------------------------------------------------------------------------
-# Basic shape
+# Basic shape and telemetry
 # --------------------------------------------------------------------------
 
 
-def test_retrieve_returns_documents_metadata_and_distances():
+def test_retrieve_returns_documents_metadata_distances_and_telemetry():
     database = FakeDatabase(
         results=[
             _result(
@@ -114,6 +132,8 @@ def test_retrieve_returns_documents_metadata_and_distances():
     assert result["documents"] == ["a", "b"]
     assert result["metadata"] == [{"page": 1, "chunk": 1}, {"page": 2, "chunk": 1}]
     assert result["distances"] == [0.1, 0.2]
+    assert result["considered_candidates"] == 2
+    assert result["best_distance"] == 0.1
 
 
 def test_top_k_defaults_to_the_configured_value():
@@ -121,7 +141,7 @@ def test_top_k_defaults_to_the_configured_value():
 
     _retriever(database).retrieve("what?")
 
-    assert database.searches == [settings.RETRIEVAL_TOP_K]
+    assert database.searches[0]["n_results"] == settings.RETRIEVAL_TOP_K
 
 
 def test_explicit_top_k_is_passed_through():
@@ -129,27 +149,25 @@ def test_explicit_top_k_is_passed_through():
 
     _retriever(database).retrieve("what?", n_results=2)
 
-    assert database.searches == [2]
+    assert database.searches[0]["n_results"] == 2
 
 
 def test_empty_results_have_a_stable_shape():
     database = FakeDatabase(results=[_result(documents=[], metadatas=[], distances=[])])
 
-    assert _retriever(database).retrieve("what?") == {
-        "documents": [],
-        "metadata": [],
-        "distances": [],
-    }
+    result = _retriever(database).retrieve("what?")
+
+    assert result["documents"] == []
+    assert result["metadata"] == []
+    assert result["distances"] == []
+    assert result["considered_candidates"] == 0
+    assert result["best_distance"] is None
 
 
 def test_missing_keys_do_not_crash():
     database = FakeDatabase(results=[{}])
 
-    assert _retriever(database).retrieve("what?") == {
-        "documents": [],
-        "metadata": [],
-        "distances": [],
-    }
+    assert _retriever(database).retrieve("what?")["documents"] == []
 
 
 def test_question_is_embedded():
@@ -161,17 +179,17 @@ def test_question_is_embedded():
 
 
 # --------------------------------------------------------------------------
-# Embedding-model fingerprint guard
+# Index fingerprint: model, schema version and vector space
 # --------------------------------------------------------------------------
 
 
-def test_matching_embedding_model_queries_normally():
+def test_matching_fingerprint_queries_normally():
     database = FakeDatabase(models={settings.EMBEDDING_MODEL})
 
     result = _retriever(database).retrieve("what?")
 
     assert result["documents"] == ["chunk"]
-    assert database.searches == [settings.RETRIEVAL_TOP_K]
+    assert len(database.searches) == 1
 
 
 def test_mismatched_embedding_model_returns_nothing():
@@ -179,58 +197,137 @@ def test_mismatched_embedding_model_returns_nothing():
 
     result = _retriever(database).retrieve("what?")
 
-    assert result == {"documents": [], "metadata": [], "distances": []}
+    assert result["documents"] == []
     assert database.searches == [], "a foreign index must not be queried"
 
 
+def test_mismatched_schema_version_returns_nothing():
+    database = FakeDatabase(versions={settings.EMBEDDING_SCHEMA_VERSION + 1})
+
+    assert _retriever(database).retrieve("what?")["documents"] == []
+    assert database.searches == []
+
+
+def test_mismatched_vector_space_returns_nothing():
+    database = FakeDatabase(space_matches=False)
+
+    assert _retriever(database).retrieve("what?")["documents"] == []
+    assert database.searches == [], "distances from another space are meaningless"
+
+
 def test_unfingerprinted_index_is_still_usable():
-    database = FakeDatabase(models=set())
+    database = FakeDatabase(models=set(), versions=set())
 
     assert _retriever(database).retrieve("what?")["documents"] == ["chunk"]
 
 
+def test_index_status_reports_every_check():
+    status = _retriever(FakeDatabase(models={"other"})).index_status()
+
+    assert status["embedding_model_match"] is False
+    assert status["schema_version_match"] is True
+    assert status["vector_space_match"] is True
+    assert status["indexed_embedding_models"] == ["other"]
+
+
 # --------------------------------------------------------------------------
-# Distance threshold
+# Relative selection (the fix for the empty-context bug)
 # --------------------------------------------------------------------------
 
 
-def test_weak_matches_are_dropped(monkeypatch):
-    monkeypatch.setattr(settings, "RETRIEVAL_MAX_DISTANCE", 0.5)
+def test_selection_is_relative_to_the_best_match(monkeypatch):
+    monkeypatch.setattr(settings, "RETRIEVAL_RELATIVE_MARGIN", 1.2)
+    monkeypatch.setattr(settings, "RETRIEVAL_ABSOLUTE_SLACK", 0.0)
+    monkeypatch.setattr(settings, "RETRIEVAL_MAX_DISTANCE", 2.0)
 
     database = FakeDatabase(
         results=[
             _result(
-                documents=["close", "medium", "far"],
+                documents=["best", "near", "far"],
                 metadatas=[
                     {"page": 1, "chunk": 1},
                     {"page": 2, "chunk": 1},
                     {"page": 3, "chunk": 1},
                 ],
-                distances=[0.2, 0.45, 0.8],
+                distances=[0.50, 0.55, 0.70],
             )
         ]
     )
 
     result = _retriever(database).retrieve("what?")
 
-    assert result["documents"] == ["close", "medium"]
-    assert result["distances"] == [0.2, 0.45]
+    assert result["documents"] == ["best", "near"]
+    assert result["best_distance"] == 0.50
 
 
-def test_everything_weak_returns_no_context(monkeypatch):
-    monkeypatch.setattr(settings, "RETRIEVAL_MAX_DISTANCE", 0.5)
+def test_a_broad_question_is_not_emptied_by_an_absolute_cut(monkeypatch):
+    # The regression this whole change exists for: every candidate is beyond
+    # the old absolute value, but they are all close to the best one.
+    monkeypatch.setattr(settings, "RETRIEVAL_RELATIVE_MARGIN", 1.15)
+    monkeypatch.setattr(settings, "RETRIEVAL_ABSOLUTE_SLACK", 0.10)
+    monkeypatch.setattr(settings, "RETRIEVAL_MAX_DISTANCE", 1.5)
 
-    database = FakeDatabase(results=[_result(distances=[0.9])])
+    database = FakeDatabase(
+        results=[
+            _result(
+                documents=["a", "b", "c"],
+                metadatas=[
+                    {"page": 1, "chunk": 1},
+                    {"page": 2, "chunk": 1},
+                    {"page": 3, "chunk": 1},
+                ],
+                distances=[0.79, 0.85, 0.90],
+            )
+        ]
+    )
 
-    assert _retriever(database).retrieve("what?")["documents"] == []
+    result = _retriever(database).retrieve("what is this document about?")
+
+    assert result["documents"], "a broad question must still reach the prompt"
+    assert result["best_distance"] == 0.79
 
 
-def test_threshold_can_be_disabled(monkeypatch):
-    monkeypatch.setattr(settings, "RETRIEVAL_MAX_DISTANCE", 10.0)
+def test_nothing_survives_the_noise_floor_but_the_best_is_kept_anyway(monkeypatch):
+    monkeypatch.setattr(settings, "RETRIEVAL_RELATIVE_MARGIN", 1.15)
+    monkeypatch.setattr(settings, "RETRIEVAL_ABSOLUTE_SLACK", 0.10)
+    monkeypatch.setattr(settings, "RETRIEVAL_MAX_DISTANCE", 0.50)
 
-    database = FakeDatabase(results=[_result(distances=[0.95])])
+    database = FakeDatabase(
+        results=[
+            _result(
+                documents=["a", "b"],
+                metadatas=[{"page": 1, "chunk": 1}, {"page": 2, "chunk": 1}],
+                distances=[0.90, 0.95],
+            )
+        ]
+    )
 
-    assert _retriever(database).retrieve("what?")["documents"] == ["chunk"]
+    result = _retriever(database).retrieve("what?")
+
+    assert result["documents"] == ["a", "b"], (
+        "an empty context makes the answer profile-only and ungrounded; "
+        "keeping the best candidates is the lesser evil"
+    )
+
+
+def test_noise_floor_caps_a_generous_relative_margin(monkeypatch):
+    monkeypatch.setattr(settings, "RETRIEVAL_RELATIVE_MARGIN", 5.0)
+    monkeypatch.setattr(settings, "RETRIEVAL_ABSOLUTE_SLACK", 5.0)
+    monkeypatch.setattr(settings, "RETRIEVAL_MAX_DISTANCE", 0.60)
+
+    database = FakeDatabase(
+        results=[
+            _result(
+                documents=["a", "b"],
+                metadatas=[{"page": 1, "chunk": 1}, {"page": 2, "chunk": 1}],
+                distances=[0.50, 0.58],
+            )
+        ]
+    )
+
+    result = _retriever(database).retrieve("what?")
+
+    assert result["documents"] == ["a", "b"]
 
 
 # --------------------------------------------------------------------------
@@ -243,13 +340,11 @@ def test_rewritten_query_adds_a_second_search():
 
     embedder = FakeEmbedder()
 
-    _retriever(
-        database,
-        embedder,
-        rewriter=FakeRewriter("better search terms"),
-    ).retrieve("what is the title?")
+    _retriever(database, embedder, rewriter=FakeRewriter("better terms")).retrieve(
+        "what is the title?"
+    )
 
-    assert embedder.queries == ["what is the title?", "better search terms"]
+    assert embedder.queries == ["what is the title?", "better terms"]
     assert len(database.searches) == 2
 
 
@@ -277,7 +372,6 @@ def test_results_from_both_queries_are_merged_and_deduped():
 
     result = _retriever(database, rewriter=FakeRewriter("better")).retrieve("q")
 
-    # beta appears in both and keeps its best distance.
     assert result["documents"] == ["beta", "alpha", "gamma"]
     assert result["distances"] == [0.2, 0.5, 0.7]
 
@@ -308,70 +402,49 @@ def test_missing_rewrite_keeps_the_original_query():
 # --------------------------------------------------------------------------
 
 
-def test_rerank_reorders_when_retrieval_is_weak(monkeypatch):
+def test_rerank_runs_when_the_candidate_set_is_flat(monkeypatch):
     monkeypatch.setattr(settings, "RERANK_ENABLED", True)
+    monkeypatch.setattr(settings, "RERANK_SKIP_RATIO", 0.6)
 
     database = FakeDatabase(
         results=[
             _result(
-                documents=["noise", "noise2", "answer"],
-                metadatas=[
-                    {"page": 1, "chunk": 1},
-                    {"page": 2, "chunk": 1},
-                    {"page": 3, "chunk": 1},
-                ],
-                distances=[0.6, 0.62, 0.7],
+                documents=["a", "b", "c", "d"],
+                metadatas=[{"page": i, "chunk": 1} for i in range(4)],
+                distances=[0.70, 0.71, 0.72, 0.73],
             )
         ]
     )
 
-    reranker = FakeReranker(order=[2])
+    reranker = FakeReranker(order=[3])
 
-    result = _retriever(database, reranker=reranker).retrieve("q", n_results=1)
+    result = _retriever(database, reranker=reranker).retrieve("q", n_results=2)
 
     assert len(reranker.calls) == 1
-    assert reranker.calls[0][0] == "q"
-    assert result["documents"] == ["answer"]
+    assert result["documents"] == ["d", "a"]
 
 
-def test_rerank_keeps_displaced_candidates_after_the_ranked_ones(monkeypatch):
+def test_rerank_is_skipped_when_the_best_stands_out(monkeypatch):
     monkeypatch.setattr(settings, "RERANK_ENABLED", True)
+    monkeypatch.setattr(settings, "RERANK_SKIP_RATIO", 0.6)
 
-    documents = ["a", "b", "c", "d", "e"]
-
+    # Best is 0.20 against a median of 0.75: clearly the right passage, so the
+    # extra call would be wasted.
     database = FakeDatabase(
         results=[
             _result(
-                documents=documents,
-                metadatas=[{"page": index, "chunk": 1} for index in range(len(documents))],
-                distances=[0.6] * len(documents),
+                documents=["a", "b", "c", "d"],
+                metadatas=[{"page": i, "chunk": 1} for i in range(4)],
+                distances=[0.20, 0.74, 0.75, 0.76],
             )
         ]
     )
 
-    # Promote "d" (index 3) to the front; the rest keep their order behind it.
-    result = _retriever(database, reranker=FakeReranker(order=[3])).retrieve("q", n_results=3)
-
-    assert result["documents"] == ["d", "a", "b"]
-
-
-def test_rerank_is_skipped_when_retrieval_is_confident(monkeypatch):
-    monkeypatch.setattr(settings, "RERANK_ENABLED", True)
-    monkeypatch.setattr(settings, "RERANK_SKIP_DISTANCE", 0.35)
-
-    database = FakeDatabase(
-        results=[
-            _result(
-                documents=["a", "b", "c"],
-                distances=[0.2, 0.3, 0.4],
-            )
-        ]
-    )
-
-    reranker = FakeReranker(order=[2])
+    reranker = FakeReranker(order=[3])
 
     _retriever(database, reranker=reranker).retrieve("q")
 
+    assert median([0.20, 0.74, 0.75, 0.76]) == 0.745
     assert reranker.calls == []
 
 
@@ -394,11 +467,7 @@ def test_unavailable_rerank_keeps_the_retrieval_order(monkeypatch):
         results=[
             _result(
                 documents=["a", "b", "c"],
-                metadatas=[
-                    {"page": 1, "chunk": 1},
-                    {"page": 2, "chunk": 1},
-                    {"page": 3, "chunk": 1},
-                ],
+                metadatas=[{"page": i, "chunk": 1} for i in range(3)],
                 distances=[0.6, 0.61, 0.62],
             )
         ]
@@ -417,11 +486,12 @@ def test_more_candidates_are_fetched_when_reranking(monkeypatch):
 
     _retriever(database).retrieve("q", n_results=5)
 
-    assert database.searches == [20]
+    assert database.searches[0]["n_results"] == 20
 
 
 def test_only_top_k_are_returned_after_reranking(monkeypatch):
     monkeypatch.setattr(settings, "RERANK_ENABLED", True)
+    monkeypatch.setattr(settings, "RERANK_SKIP_RATIO", 0.0)
 
     database = FakeDatabase(
         results=[
@@ -439,25 +509,48 @@ def test_only_top_k_are_returned_after_reranking(monkeypatch):
 
 
 # --------------------------------------------------------------------------
-# Document profile passthrough
+# Document scoping
 # --------------------------------------------------------------------------
 
 
-def test_document_profile_is_returned_from_the_store():
-    profile = {"text": "Title: X", "metadata": {"page": 1, "chunk": 0}}
+def test_search_is_scoped_to_the_document():
+    database = FakeDatabase()
 
-    database = FakeDatabase(profile=profile)
+    _retriever(database, document_id="document-a").retrieve("q")
 
-    assert _retriever(database).document_profile() == profile
+    assert database.searches[0]["document_id"] == "document-a"
 
 
-def test_document_profile_is_none_when_not_indexed():
+def test_search_is_unscoped_when_no_document_is_selected():
+    database = FakeDatabase()
+
+    _retriever(database).retrieve("q")
+
+    assert database.searches[0]["document_id"] is None
+
+
+def test_profile_is_requested_for_the_selected_document():
+    database = FakeDatabase(profile={"text": "Title: A", "metadata": {}})
+
+    _retriever(database, document_id="document-a").document_profile()
+
+    assert database.profile_scopes == ["document-a"]
+
+
+def test_profile_is_returned_from_the_store():
+    profile = {"text": "Title: X", "metadata": {"page": 0, "chunk": 0}}
+
+    assert _retriever(FakeDatabase(profile=profile)).document_profile() == profile
+
+
+def test_profile_is_none_when_not_indexed():
     assert _retriever(FakeDatabase()).document_profile() is None
 
 
-def test_document_profile_is_skipped_when_disabled(monkeypatch):
+def test_profile_is_skipped_when_disabled(monkeypatch):
     monkeypatch.setattr(settings, "DOCUMENT_PROFILE_IN_CONTEXT", False)
 
     database = FakeDatabase(profile={"text": "Title: X", "metadata": {}})
 
     assert _retriever(database).document_profile() is None
+    assert database.profile_scopes == [], "no lookup should happen at all"

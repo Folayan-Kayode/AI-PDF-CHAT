@@ -97,8 +97,10 @@ def test_limits_are_sane():
     assert settings.RETRIEVAL_TOP_K > 0
     assert settings.RETRIEVAL_CANDIDATES >= settings.RETRIEVAL_TOP_K
     assert settings.RETRIEVAL_MAX_DISTANCE > 0
+    assert settings.RETRIEVAL_RELATIVE_MARGIN >= 1.0
+    assert settings.RETRIEVAL_ABSOLUTE_SLACK >= 0.0
     assert settings.QUERY_REWRITE_MAX_CHARS > 0
-    assert settings.RERANK_SKIP_DISTANCE >= 0
+    assert settings.RERANK_SKIP_RATIO >= 0
     assert settings.RERANK_SNIPPET_CHARS > 0
     assert settings.EMBEDDING_BATCH_SIZE > 0
     assert settings.EMBEDDING_MAX_RETRIES >= 1
@@ -119,8 +121,10 @@ def test_model_default_is_deepseek():
 def test_shipped_retrieval_defaults_are_sane():
     # The class attributes are the shipped defaults; the unit-test fixture
     # patches the instance, so these are the values a user actually gets.
-    assert 0.0 < config.Settings.RETRIEVAL_MAX_DISTANCE <= 1.0
-    assert 0.0 <= config.Settings.RERANK_SKIP_DISTANCE <= 1.0
+    assert 0.0 < config.Settings.RETRIEVAL_MAX_DISTANCE <= 2.0
+    assert config.Settings.RETRIEVAL_RELATIVE_MARGIN >= 1.0
+    assert config.Settings.RETRIEVAL_ABSOLUTE_SLACK >= 0.0
+    assert 0.0 <= config.Settings.RERANK_SKIP_RATIO <= 1.0
     assert config.Settings.RETRIEVAL_CANDIDATES >= config.Settings.RETRIEVAL_TOP_K
     assert config.Settings.RETRIEVAL_TOP_K > 0
 

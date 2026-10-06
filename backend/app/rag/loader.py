@@ -1,4 +1,4 @@
-"""PDF text extraction."""
+"""PDF text extraction, outline and metadata."""
 
 from pathlib import Path
 from typing import Any
@@ -16,19 +16,23 @@ from app.core.exceptions import (
 )
 from app.utils.helpers import clean_text
 
+# An outline can be thousands of entries long; the profile only needs enough
+# to describe the document's shape.
+MAX_OUTLINE_ENTRIES = 80
+
 
 class PDFLoader:
-    """Extracts cleaned text, page by page, from a PDF."""
+    """Extracts text, bookmarks and metadata from a PDF in one parse."""
 
     def __init__(self, pdf_path: str | Path) -> None:
         self.pdf_path = Path(pdf_path)
 
-    def load(self) -> list[dict[str, Any]]:
+    def load_document(self) -> dict[str, Any]:
         """
-        Return [{"page": int, "text": str}, ...] for every page.
+        Return pages, bookmark outline and PDF metadata.
 
-        Raises a PDFProcessingError subclass when the document is unusable,
-        so the caller can answer with a meaningful status code.
+        One parse, because parsing a large document is the expensive part and
+        the outline and metadata come from the same reader.
         """
         try:
             reader = PdfReader(self.pdf_path)
@@ -52,6 +56,10 @@ class PDFLoader:
                 for number, page in enumerate(reader.pages, start=1)
             ]
 
+            outline = self._outline(reader)
+
+            metadata = self._metadata(reader)
+
         except PDFProcessingError:
             raise
 
@@ -67,7 +75,75 @@ class PDFLoader:
                 "scanned or image-only document; OCR is not yet supported."
             )
 
-        return pages
+        return {
+            "pages": pages,
+            "outline": outline,
+            "metadata": metadata,
+        }
+
+    def load(self) -> list[dict[str, Any]]:
+        """Return only the pages (kept for callers that need just text)."""
+        return self.load_document()["pages"]
+
+    @staticmethod
+    def _outline(reader: PdfReader) -> list[dict[str, Any]]:
+        """
+        Flatten the bookmark tree into (depth, title) entries.
+
+        Free and exact where it exists, which is why the profile prefers it to
+        a model guessing at the document's structure from its first pages.
+        """
+        try:
+            items = reader.outline
+        except Exception:
+            return []
+
+        entries: list[dict[str, Any]] = []
+
+        def walk(nodes: list[Any], depth: int) -> None:
+            for node in nodes:
+                if len(entries) >= MAX_OUTLINE_ENTRIES:
+                    return
+
+                if isinstance(node, list):
+                    walk(node, depth + 1)
+                    continue
+
+                title = getattr(node, "title", None)
+
+                if not title:
+                    continue
+
+                cleaned = " ".join(str(title).split())
+
+                if cleaned:
+                    entries.append({"depth": depth, "title": cleaned})
+
+        try:
+            walk(items, 0)
+        except Exception:
+            return entries
+
+        return entries
+
+    @staticmethod
+    def _metadata(reader: PdfReader) -> dict[str, str]:
+        """Title, author and subject as recorded by the producing tool."""
+        raw = reader.metadata or {}
+
+        metadata: dict[str, str] = {}
+
+        for key, name in (
+            ("/Title", "title"),
+            ("/Author", "author"),
+            ("/Subject", "subject"),
+        ):
+            value = raw.get(key)
+
+            if value and str(value).strip():
+                metadata[name] = " ".join(str(value).split())
+
+        return metadata
 
     @staticmethod
     def _require_decryptable(reader: PdfReader) -> None:

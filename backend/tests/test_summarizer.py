@@ -132,3 +132,124 @@ def test_profile_failure_does_not_raise():
 
     # The document is still indexed, just without a profile.
     assert DocumentSummarizer(client=client).summarize(PAGES) is None
+
+
+# --------------------------------------------------------------------------
+# Profile built from the document's own metadata and bookmarks
+# --------------------------------------------------------------------------
+
+METADATA = {"title": "Immersive Audio Design", "author": "CEDIA/CTA R10"}
+
+OUTLINE = [
+    {"depth": 0, "title": "i. Introduction"},
+    {"depth": 0, "title": "ii. Scope"},
+    {"depth": 1, "title": "Normative References"},
+]
+
+
+def test_metadata_and_outline_are_used_without_a_model_call(monkeypatch):
+    monkeypatch.setattr(settings, "DOCUMENT_SUMMARY_ENABLED", True)
+
+    client = FakeClient("should not be called")
+
+    profile = DocumentSummarizer(client=client).profile(
+        PAGES,
+        outline=OUTLINE,
+        metadata=METADATA,
+    )
+
+    assert "Title: Immersive Audio Design" in profile
+    assert "Author: CEDIA/CTA R10" in profile
+    assert "Sections:" in profile
+    assert "- i. Introduction" in profile
+    assert "  - Normative References" in profile
+    assert client.prompts == [], "a document with an outline needs no model call"
+
+
+def test_model_is_used_when_there_is_no_outline(monkeypatch):
+    monkeypatch.setattr(settings, "DOCUMENT_SUMMARY_ENABLED", True)
+
+    client = FakeClient("Title: guessed")
+
+    profile = DocumentSummarizer(client=client).profile(PAGES, outline=[], metadata={})
+
+    assert profile == "Title: guessed"
+    assert len(client.prompts) == 1
+
+
+def test_model_is_used_alongside_the_outline_when_forced(monkeypatch):
+    monkeypatch.setattr(settings, "DOCUMENT_SUMMARY_ENABLED", True)
+    monkeypatch.setattr(settings, "DOCUMENT_SUMMARY_ALWAYS", True)
+
+    client = FakeClient("Summary: it covers audio.")
+
+    profile = DocumentSummarizer(client=client).profile(
+        PAGES,
+        outline=OUTLINE,
+        metadata=METADATA,
+    )
+
+    assert "Sections:" in profile
+    assert "Summary: it covers audio." in profile
+    assert len(client.prompts) == 1
+
+
+def test_placeholder_metadata_is_not_trusted(monkeypatch):
+    # reportlab, Word and others write this when nobody set a title.
+    monkeypatch.setattr(settings, "DOCUMENT_SUMMARY_ENABLED", False)
+
+    profile = DocumentSummarizer(client=FakeClient("unused")).profile(
+        PAGES,
+        outline=[],
+        metadata={
+            "title": "untitled",
+            "author": "anonymous",
+            "subject": "unspecified",
+        },
+    )
+
+    assert profile is None
+
+
+def test_word_style_title_is_not_trusted(monkeypatch):
+    monkeypatch.setattr(settings, "DOCUMENT_SUMMARY_ENABLED", False)
+
+    profile = DocumentSummarizer(client=FakeClient("unused")).profile(
+        PAGES,
+        outline=[],
+        metadata={"title": "Microsoft Word - report.doc"},
+    )
+
+    assert profile is None
+
+
+def test_useful_metadata_survives_placeholders(monkeypatch):
+    monkeypatch.setattr(settings, "DOCUMENT_SUMMARY_ENABLED", False)
+
+    profile = DocumentSummarizer(client=FakeClient("unused")).profile(
+        PAGES,
+        outline=[],
+        metadata={"title": "untitled", "author": "Michael E. Whitman"},
+    )
+
+    assert profile == "Author: Michael E. Whitman"
+
+
+def test_profile_is_truncated_to_the_configured_length(monkeypatch):
+    monkeypatch.setattr(settings, "DOCUMENT_SUMMARY_MAX_CHARS", 20)
+
+    profile = DocumentSummarizer(client=FakeClient("unused")).profile(
+        PAGES,
+        outline=[{"depth": 0, "title": "A very long section title indeed"}],
+        metadata={"title": "A very long document title indeed"},
+    )
+
+    assert len(profile) == 20
+
+
+def test_source_pages_scale_with_document_size():
+    from app.rag.summarizer import _source_page_count
+
+    assert _source_page_count(3) == 3
+    assert _source_page_count(157) >= 10
+    assert _source_page_count(658) > _source_page_count(157)

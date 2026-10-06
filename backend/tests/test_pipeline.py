@@ -4,7 +4,7 @@ import pytest
 
 from app.core.config import settings
 from app.core.exceptions import UpstreamUnavailableError
-from app.rag.pipeline import NOT_FOUND_MESSAGE, RAGPipeline
+from app.rag.pipeline import NOT_FOUND_MESSAGE, NOT_FOUND_SENTINEL, RAGPipeline
 
 
 class FakeRetriever:
@@ -76,21 +76,30 @@ def test_answer_is_returned_with_sources():
 
 
 def test_sources_are_dropped_when_the_model_abstains():
-    assert _pipeline(["chunk text"], NOT_FOUND_MESSAGE).ask("what?")["sources"] == []
+    result = _pipeline(["chunk text"], NOT_FOUND_SENTINEL).ask("what?")
+
+    assert result["sources"] == []
+    assert result["abstained"] is True
+    assert result["answer"] == NOT_FOUND_MESSAGE
 
 
-def test_abstention_detection_is_case_insensitive():
-    assert _pipeline(["chunk text"], NOT_FOUND_MESSAGE.upper()).ask("what?")["sources"] == []
+def test_abstention_sentinel_is_case_insensitive():
+    assert _pipeline(["chunk text"], NOT_FOUND_SENTINEL.lower()).ask("what?")["sources"] == []
 
 
 def test_abstention_with_trailing_text_is_detected():
-    answer = NOT_FOUND_MESSAGE + " The document does not discuss revenue."
+    answer = NOT_FOUND_SENTINEL + " The document does not discuss revenue."
 
-    assert _pipeline(["chunk text"], answer).ask("what?")["sources"] == []
+    result = _pipeline(["chunk text"], answer).ask("what?")
+
+    assert result["abstained"] is True
+    assert result["sources"] == []
 
 
-def test_answer_that_quotes_the_sentence_keeps_its_sources():
-    # A substring test would misread this as an abstention and drop sources.
+def test_answer_that_quotes_the_refusal_keeps_its_sources():
+    # The old implementation matched an English sentence, so a document that
+    # happened to contain that sentence suppressed its own sources. The
+    # sentinel makes that impossible.
     answer = (
         "Page 3 uses the phrase 'I couldn't find that information in the "
         "uploaded document' as an example of a refusal."
@@ -99,6 +108,39 @@ def test_answer_that_quotes_the_sentence_keeps_its_sources():
     result = _pipeline(["chunk text"], answer).ask("what?")
 
     assert result["sources"] == [{"page": 1, "chunk": 1}]
+    assert result["abstained"] is False
+
+
+def test_a_quoted_sentinel_is_still_an_abstention():
+    result = _pipeline(["chunk text"], f"Nothing here {NOT_FOUND_SENTINEL}").ask("what?")
+
+    assert result["abstained"] is True
+
+
+def test_answer_keeps_a_stray_sentinel_out_of_the_reply():
+    answer = f"{NOT_FOUND_SENTINEL}\nSome trailing text"
+
+    result = _pipeline(["chunk text"], answer).ask("what?")
+
+    assert NOT_FOUND_SENTINEL not in result["answer"]
+
+
+def test_retrieval_telemetry_is_reported():
+    pipeline = _pipeline(["chunk text"])
+
+    result = pipeline.ask("what?")
+
+    assert result["retrieval"]["retrieved_chunks"] == 1
+    assert result["retrieval"]["profile_used"] is False
+
+
+def test_telemetry_flags_a_profile_only_answer():
+    pipeline = _pipeline([], profile=PROFILE)
+
+    result = pipeline.ask("what is the title?")
+
+    assert result["retrieval"]["retrieved_chunks"] == 0
+    assert result["retrieval"]["profile_used"] is True
 
 
 @pytest.mark.parametrize("answer", ["", "   ", "\n\t"])
@@ -114,6 +156,7 @@ def test_empty_retrieval_never_calls_the_model():
 
     assert result["answer"] == NOT_FOUND_MESSAGE
     assert result["sources"] == []
+    assert result["abstained"] is True
     assert pipeline.generator.prompts == []
 
 
@@ -288,9 +331,12 @@ def test_profile_is_reported_as_a_source():
 
 
 def test_profile_sources_are_dropped_on_abstention():
-    pipeline = _pipeline(["chunk text"], answer=NOT_FOUND_MESSAGE, profile=PROFILE)
+    pipeline = _pipeline(["chunk text"], answer=NOT_FOUND_SENTINEL, profile=PROFILE)
 
-    assert pipeline.ask("what?")["sources"] == []
+    result = pipeline.ask("what?")
+
+    assert result["sources"] == []
+    assert result["abstained"] is True
 
 
 def test_profile_alone_can_answer_when_retrieval_is_empty():
@@ -332,6 +378,35 @@ def test_profile_does_not_consume_the_context_budget(monkeypatch):
     assert len(_embedded_context(prompt)) <= 50
     # ...while the profile is present in full.
     assert "Title: Principles of Information Security" in prompt
+
+
+def test_token_budget_stops_the_context(monkeypatch):
+    monkeypatch.setattr(settings, "MAX_CONTEXT_CHARS", 10**6)
+    monkeypatch.setattr(settings, "MAX_CONTEXT_TOKENS", 20)
+
+    pipeline = _pipeline(["a" * 200, "b" * 200, "c" * 200])
+
+    pipeline.ask("what?")
+
+    embedded = _embedded_context(pipeline.generator.prompts[0])
+
+    assert "a" * 200 in embedded
+    assert "c" * 200 not in embedded, "the token budget should have stopped it"
+
+
+def test_cjk_text_hits_the_token_budget_sooner_than_latin(monkeypatch):
+    monkeypatch.setattr(settings, "MAX_CONTEXT_CHARS", 10**6)
+    monkeypatch.setattr(settings, "MAX_CONTEXT_TOKENS", 60)
+
+    pipeline = _pipeline(["中" * 100, "文" * 100])
+
+    pipeline.ask("what?")
+
+    embedded = _embedded_context(pipeline.generator.prompts[0])
+
+    # 100 CJK characters are ~100 tokens, so only the first chunk fits in 60.
+    assert "中" * 100 in embedded
+    assert "文" * 100 not in embedded
 
 
 # --------------------------------------------------------------------------

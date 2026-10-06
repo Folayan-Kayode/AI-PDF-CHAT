@@ -14,6 +14,7 @@ from app.core.exceptions import (
     RetrievalError,
 )
 from app.database.chroma import DOCUMENT_SUMMARY_KIND, ChromaDatabase, get_database
+from app.database.registry import get_registry
 from app.rag.citations import PROFILE_PAGE
 from app.rag.embeddings import EmbeddingModel, get_embedding_model
 from app.rag.loader import PDFLoader
@@ -38,9 +39,24 @@ def _profile_chunk(profile: str) -> dict[str, Any]:
     return {
         "text": f"Document profile:\n{profile}",
         "page": PROFILE_PAGE,
+        "page_start": PROFILE_PAGE,
+        "page_end": PROFILE_PAGE,
         "chunk": 0,
         "kind": DOCUMENT_SUMMARY_KIND,
     }
+
+
+def _record_document(**record: Any) -> None:
+    """
+    Remember what the index was built from.
+
+    A registry failure must not fail an ingest that otherwise succeeded: the
+    index is authoritative and the registry is how /ready describes it.
+    """
+    try:
+        get_registry().replace_with(**record)
+    except Exception:
+        logger.exception("could not record the document in the registry")
 
 
 class PDFService:
@@ -107,11 +123,18 @@ class PDFService:
                 "index_replaced": False,
             }
 
-        pages = PDFLoader(pdf_path).load()
+        document = PDFLoader(pdf_path).load_document()
 
-        chunks = TextSplitter().split_pages(pages)
+        pages = document["pages"]
 
-        profile = (summarizer or DocumentSummarizer()).summarize(pages)
+        # Whole-document splitting, so chunks are not cut at page boundaries.
+        chunks = TextSplitter().split_document(pages)
+
+        profile = (summarizer or DocumentSummarizer()).profile(
+            pages,
+            outline=document["outline"],
+            metadata=document["metadata"],
+        )
 
         if profile:
             # Prepended so it is the first chunk of the document; chunk 0
@@ -129,13 +152,17 @@ class PDFService:
 
         texts = [chunk["text"] for chunk in chunks]
 
-        ids = [f"{document_id}_{chunk['page']}_{chunk['chunk']}" for chunk in chunks]
+        ids = [f"{document_id}_{chunk['page_start']}_{chunk['chunk']}" for chunk in chunks]
 
         # The embedding fingerprint lets the retriever detect an index built
         # in a different vector space instead of returning meaningless hits.
         metadatas = [
             {
-                "page": chunk["page"],
+                # `page` is the citation anchor; the span is what the chunk
+                # actually covers, which may be several pages.
+                "page": chunk["page_start"],
+                "page_start": chunk["page_start"],
+                "page_end": chunk.get("page_end", chunk["page_start"]),
                 "chunk": chunk["chunk"],
                 "kind": chunk.get("kind", "content"),
                 "document_id": document_id,
@@ -164,6 +191,15 @@ class PDFService:
             "indexed document_id=%s chunks=%s",
             document_id,
             len(chunks),
+        )
+
+        _record_document(
+            document_id=document_id,
+            filename=Path(pdf_path).name,
+            pages=len(pages),
+            chunks=len(chunks),
+            embedding_model=settings.EMBEDDING_MODEL,
+            schema_version=settings.EMBEDDING_SCHEMA_VERSION,
         )
 
         return {

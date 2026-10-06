@@ -36,13 +36,6 @@ QUESTIONS_PATH = Path(__file__).with_name("questions.jsonl")
 
 DEFAULT_DOCUMENT = Path(r"C:\Users\Davel\Documents\Python\Whitman.pdf")
 
-# The evaluation document is a 658-page book, deliberately larger than the
-# product's own ingestion limits. The harness raises them for the duration of
-# an ingest so the limits do not mask the behaviour being measured.
-EVAL_MAX_PAGES = 2000
-
-EVAL_MAX_CHUNKS = 20000
-
 
 # --------------------------------------------------------------------------
 # Configurations
@@ -175,17 +168,13 @@ def ingest(document: Path, chunk_size: int) -> None:
 
     pdf_service.TextSplitter = splitter
 
-    original_pages_limit = settings.MAX_PAGES_PER_DOCUMENT
-    original_chunks_limit = settings.MAX_CHUNKS_PER_DOCUMENT
-
-    settings.MAX_PAGES_PER_DOCUMENT = max(original_pages_limit, EVAL_MAX_PAGES)
-    settings.MAX_CHUNKS_PER_DOCUMENT = max(original_chunks_limit, EVAL_MAX_CHUNKS)
-
     try:
         get_database().reset()
 
         started = time.perf_counter()
 
+        # The production ingestion limits are used as they ship: a harness that
+        # has to raise them is measuring a configuration the product rejects.
         result = pdf_service.PDFService.process(document)
 
         print(
@@ -195,9 +184,6 @@ def ingest(document: Path, chunk_size: int) -> None:
         )
     finally:
         pdf_service.TextSplitter = original_splitter
-
-        settings.MAX_PAGES_PER_DOCUMENT = original_pages_limit
-        settings.MAX_CHUNKS_PER_DOCUMENT = original_chunks_limit
 
 
 def build_pipeline(proxy: CountingProxy) -> Any:

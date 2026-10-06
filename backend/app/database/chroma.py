@@ -21,6 +21,14 @@ PREVIOUS_COLLECTION_NAME = "pdf_documents__previous"
 # Metadata kind for the document profile chunk (see app/rag/summarizer.py).
 DOCUMENT_SUMMARY_KIND = "document_summary"
 
+# Shape returned for a query that cannot run (empty index).
+_EMPTY_QUERY_RESULT: dict[str, Any] = {
+    "documents": [[]],
+    "metadatas": [[]],
+    "distances": [[]],
+    "ids": [[]],
+}
+
 
 class ChromaDatabase:
     """
@@ -35,11 +43,41 @@ class ChromaDatabase:
     def __init__(self, path: str | None = None) -> None:
         self.client = PersistentClient(path=path or settings.CHROMA_DIRECTORY)
 
-        self.collection = self.client.get_or_create_collection(name=COLLECTION_NAME)
+        self.collection = self._open_collection(COLLECTION_NAME)
 
     # ------------------------------------------------------------------
     # Collection helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _metadata() -> dict[str, Any]:
+        """Collection settings: an explicit space so distances are portable."""
+        return {"hnsw:space": settings.CHROMA_SPACE}
+
+    def _open_collection(self, name: str) -> Any:
+        """
+        Open a collection, creating it with the configured vector space.
+
+        An existing collection is returned untouched and its space checked
+        separately, because an index built in another space cannot simply be
+        relabelled.
+        """
+        if name in self._names():
+            return self.client.get_collection(name)
+
+        return self.client.get_or_create_collection(
+            name=name,
+            metadata=self._metadata(),
+        )
+
+    def space_matches(self) -> bool:
+        """
+        Whether the index was built in the configured vector space.
+
+        Distance values only mean something within one space, so an index from
+        another space has to be re-embedded rather than queried.
+        """
+        return (self.collection.metadata or {}).get("hnsw:space") == settings.CHROMA_SPACE
 
     def _drop(self, name: str) -> None:
         """Delete a collection if it exists."""
@@ -56,7 +94,7 @@ class ChromaDatabase:
         """Drop and recreate the live collection (used by tests and admin)."""
         self._drop(COLLECTION_NAME)
 
-        self.collection = self.client.get_or_create_collection(name=COLLECTION_NAME)
+        self.collection = self._open_collection(COLLECTION_NAME)
 
     # ------------------------------------------------------------------
     # Reads
@@ -81,12 +119,12 @@ class ChromaDatabase:
         except Exception as exc:
             raise RetrievalError("Could not read the document index.") from exc
 
-    def indexed_embedding_models(self, sample_size: int = 200) -> set[str]:
+    def indexed_fingerprint(self, sample_size: int = 200) -> dict[str, set]:
         """
-        Embedding model names recorded in the index.
+        What the index was built with, in one read.
 
-        Vectors from a different model live in an incompatible space, so the
-        caller compares this against the configured model before trusting
+        Vectors from a different model, or a different vector space, live in
+        an incomparable space, so the caller checks this before trusting
         retrieved chunks.
         """
         try:
@@ -100,12 +138,23 @@ class ChromaDatabase:
         metadatas = result.get("metadatas") or []
 
         return {
-            metadata["embedding_model"]
-            for metadata in metadatas
-            if metadata and metadata.get("embedding_model")
+            "embedding_models": {
+                metadata["embedding_model"]
+                for metadata in metadatas
+                if metadata and metadata.get("embedding_model")
+            },
+            "schema_versions": {
+                metadata["schema_version"]
+                for metadata in metadatas
+                if metadata and metadata.get("schema_version") is not None
+            },
         }
 
-    def document_profile(self) -> dict[str, Any] | None:
+    def indexed_embedding_models(self, sample_size: int = 200) -> set[str]:
+        """Embedding model names recorded in the index."""
+        return self.indexed_fingerprint(sample_size)["embedding_models"]
+
+    def document_profile(self, document_id: str | None = None) -> dict[str, Any] | None:
         """
         The document profile chunk, if one is indexed.
 
@@ -113,10 +162,18 @@ class ChromaDatabase:
         it is supplied to the model directly instead of competing in the
         vector ranking: a question like "what is the title of this book?" does
         not embed close to the profile, even though the profile answers it.
+
+        Scoped by document_id when given, so one document's profile is never
+        injected into another document's answer.
         """
+        where: dict[str, Any] = {"kind": DOCUMENT_SUMMARY_KIND}
+
+        if document_id is not None:
+            where = {"$and": [where, {"document_id": document_id}]}
+
         try:
             result = self.collection.get(
-                where={"kind": DOCUMENT_SUMMARY_KIND},
+                where=where,
                 limit=1,
                 include=["documents", "metadatas"],
             )
@@ -133,6 +190,10 @@ class ChromaDatabase:
             "text": documents[0],
             "metadata": metadatas[0] if metadatas else {},
         }
+
+    def indexed_schema_versions(self, sample_size: int = 200) -> set[int]:
+        """Schema versions recorded in the index."""
+        return self.indexed_fingerprint(sample_size)["schema_versions"]
 
     # ------------------------------------------------------------------
     # Writes
@@ -229,7 +290,7 @@ class ChromaDatabase:
         """
         self._drop(STAGING_COLLECTION_NAME)
 
-        staging = self.client.get_or_create_collection(name=STAGING_COLLECTION_NAME)
+        staging = self._open_collection(STAGING_COLLECTION_NAME)
 
         try:
             self.add_documents(
@@ -270,18 +331,35 @@ class ChromaDatabase:
 
         self._drop(PREVIOUS_COLLECTION_NAME)
 
-        self.collection = self.client.get_or_create_collection(name=COLLECTION_NAME)
+        self.collection = self._open_collection(COLLECTION_NAME)
 
     def search(
         self,
         embedding: list[float],
         n_results: int = 5,
+        document_id: str | None = None,
     ) -> dict[str, Any]:
-        """Return the closest chunks to the given embedding."""
+        """
+        Return the closest chunks to the given embedding.
+
+        Scoped by document_id when given, and clamped to the index size so a
+        tiny document does not depend on the client library's own clamping.
+        """
+        where = {"document_id": document_id} if document_id is not None else None
+
+        try:
+            available = self.collection.count()
+        except Exception as exc:
+            raise RetrievalError("Could not read the document index.") from exc
+
+        if available == 0:
+            return dict(_EMPTY_QUERY_RESULT)
+
         try:
             return self.collection.query(
                 query_embeddings=[embedding],
-                n_results=n_results,
+                n_results=max(1, min(n_results, available)),
+                where=where,
             )
         except Exception as exc:
             raise RetrievalError("Could not query the document index.") from exc

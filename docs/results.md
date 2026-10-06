@@ -43,10 +43,16 @@ Answer correctness is checked by keyword matching rather than by a model
 judge, on purpose: an ablation comparison must not be skewed by the variance
 of a model grading its own output.
 
-## Ablation
+## Ablation across knob values
+
+> **Historical.** These rows were measured in the old L2 space with per-page
+> chunking and an absolute 0.60 distance threshold, before the generalisation
+> work. They document how each *knob* behaved; the shipped defaults have since
+> changed, and distances below are not comparable with the cosine distances in
+> the next section.
 
 One pass per configuration, same 30 questions, same index. `all` is every
-feature on; `tuned (shipped)` is what this project now ships.
+feature on; `tuned (shipped)` was what the project shipped at the time.
 
 | Configuration | hit@5 | MRR | Answer acc. | Abstain P | Abstain R | Cited | Citations valid | p50 s | $/question | calls/q |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -133,13 +139,82 @@ worse. `top_k=3` is clearly too few (0.83 in the ablation).
 configurations that passed unfiltered context produced an invented citation,
 which is exactly what the verifier exists to catch.
 
+## Generalising across document shapes
+
+The ablation above used **one** 658-page English textbook, and an absolute
+distance threshold tuned on it (0.60) shipped as a global default. On a
+different document it deleted every passage for broad questions: retrieval
+returned nothing, and the answer was generated from the document profile alone,
+cited entirely as `[document]`. A 30-question set anchored to specific pages
+could not observe that, because every question it contained had a nearby page.
+
+`eval/run_shapes.py` ingests five documents with the shipped settings and fails
+loudly if any question is answered with an empty context:
+
+| Document | Shape | Questions | Answered | Abstained correctly | Questions with no passages | Fewest passages |
+| --- | --- | --- | --- | --- | --- | --- |
+| `sheet` | 2-page form, no bookmarks | 3 | 2/2 | 1/1 | 0 | 2 |
+| `table` | table of sensor readings | 3 | 2/2 | 1/1 | 0 | 2 |
+| `german` | 1-page German document | 2 | 1/1 | 1/1 | 0 | 2 |
+| `standard` | 157-page technical standard | 4 | 3/3 | 1/1 | 0 | 5 |
+| `book` | 658-page textbook | 4 | 3/3 | 1/1 | 0 | 5 |
+
+Sixteen of sixteen questions behaved correctly and **no question was ever
+answered with an empty context**, including the questions that used to fail:
+
+| Question | Document | Passages | Best distance |
+| --- | --- | --- | --- |
+| "What is this document about?" | standard | 5 | 0.349 |
+| "What is the title of this document?" | standard | 5 | 0.346 |
+| "List the sections of this document." | standard | 5 | 0.331 |
+| "What is this book about?" | book | 5 | 0.331 |
+| "List the chapters of this book." | book | 5 | 0.296 |
+| "What was the temperature on 3 March 2024?" | table | 2 | 0.278 |
+| "Wie oft erfolgt die Wartung der Heizungsanlage?" | german | 2 | 0.266 |
+
+Four things this demonstrates that the knob ablation could not:
+
+- **Broad questions reach the model.** "What is this document about?" and "list
+  the sections" are aggregate questions with no single source page. They are now
+  answered from the profile outline, which is built from the document's own
+  bookmarks and supplied with every question.
+- **Aggregate questions cannot be answered by a larger top-k.** No top-5 (or
+  top-50) of a 157-page standard contains its own table of contents, which is
+  why the outline is built at ingest rather than searched for.
+- **A table cell is retrievable.** The sensor reading for a specific date
+  survives extraction because line structure is preserved instead of being
+  flattened into one line per page.
+- **A non-English document works end to end.** The German question is answered
+  from the German document, because abstention is detected by a language-neutral
+  sentinel rather than by matching an English sentence.
+
+Distances are now **cosine** (identical text is 0.0, orthogonal is 1.0), set
+explicitly on the collection. The values above sit between 0.19 and 0.55, so
+the old absolute 0.60 cut would have removed the top of that range outright.
+
+
+
 ## Decisions taken
+
+Among the knobs (from the ablation above):
 
 | Setting | Was | Now | Why |
 | --- | --- | --- | --- |
 | `RERANK_ENABLED` | `true` | **`false`** | no accuracy gain across repetitions at 2.5× the cost |
-| `RETRIEVAL_MAX_DISTANCE` | 0.75 | **0.60** | never worse, and a smaller prompt costs less |
-| `RERANK_SKIP_DISTANCE` | 0.35 | **0.50** | only consulted when reranking is enabled |
+| `RERANK_SKIP_DISTANCE` | `0.35` | → `RERANK_SKIP_RATIO=0.60` | relative to the query's own candidates |
+
+From the generalisation work (current defaults):
+
+| Setting | Was | Now | Why |
+| --- | --- | --- | --- |
+| `RETRIEVAL_MAX_DISTANCE` | `0.60` selector | **`1.50` noise floor** | an absolute cut deleted the broad questions on a second document |
+| `RETRIEVAL_RELATIVE_MARGIN` | — | **`1.15`** | select against the best match for *this* query |
+| `RETRIEVAL_ABSOLUTE_SLACK` | — | **`0.10`** | a pure multiplier is too tight when the best distance is small |
+| `CHROMA_SPACE` | unset (L2) | **`cosine`** | distances must mean the same thing across models and documents |
+| `EMBEDDING_SCHEMA_VERSION` | `1` | **`2`** | the space change invalidates existing indexes; detected and reported |
+| `MAX_PAGES_PER_DOCUMENT` | `300` | **`2000`** | the product rejected the document the evaluation used |
+| `MAX_CHUNKS_PER_DOCUMENT` | `1500` | **`20000`** | same, and it bounds the embedding call count |
+| `MAX_CONTEXT_TOKENS` | — | **`3000`** | a character budget means something different for CJK text |
 
 `RETRIEVAL_TOP_K=5` and `chunk_size=1000` were confirmed rather than changed.
 `RETRIEVAL_CANDIDATES` only applies when reranking is enabled, which is now
@@ -147,26 +222,34 @@ off by default.
 
 ## Limitations
 
-- **Thirty questions is a small sample**, which is why the headline claims
-  rest on three repetitions rather than one pass. The remaining single-pass
-  rows in the ablation should be read as directional.
-- **One question fails in every run.** q15, "what stops an attacker pretending
-  to be a company in order to steal login details?" (phishing, pages 105–107),
-  was missed in every configuration and every repetition, while the direct
-  question "what is phishing?" passes. This is a genuine paraphrase-retrieval
-  limitation that query rewriting did not rescue. It is left in the set rather
-  than removed: a test set containing only questions the system answers is not
-  a test set.
-- **One document, one language.** Thresholds are corpus-dependent, so treat
-  0.60 as a starting point and re-run the harness against your own document.
+- **Neither evaluation is large.** Thirty-three questions on one book, and four
+  questions per shape on five documents, is enough to catch a class of failure,
+  not to rank close alternatives. The knob ablation's single-pass rows are
+  directional; the claims that survive repetition are marked as such.
+- **The relative margins are still tuned values.** `RETRIEVAL_RELATIVE_MARGIN`
+  and `RETRIEVAL_ABSOLUTE_SLACK` were chosen so the shape set passes; they have
+  not been swept the way the old absolute value was. Re-run
+  `python -m eval.run_shapes` against your own documents before trusting them.
+- **The shipped profile prefers the document's own metadata and bookmarks.**
+  With `DOCUMENT_SUMMARY_ALWAYS=false`, a document that has a bookmark outline
+  skips the model call, so fields the PDF does not record (a publisher, for
+  example) are not in the profile. Set it to `true` to pay for a model reading
+  of the opening pages as well.
+- **One question fails in every configuration.** q15, "what stops an attacker
+  pretending to be a company in order to steal login details?" (phishing, pages
+  105–107), was missed in every run, while the direct question "what is
+  phishing?" passes. It is left in the set deliberately: a test set containing
+  only questions the system answers is not a test set.
+- **OCR is still out of scope.** Scanned and image-only PDFs are rejected with a
+  clear message rather than transcribed.
 - **Cost is estimated from characters**, not read from provider billing, so
   treat `$` columns as relative comparisons rather than invoices.
 - **Answer accuracy is keyword-based.** It cannot detect a confidently wrong
   answer that happens to contain the expected terms, so read it alongside the
   abstention and citation columns.
-- **The baseline still has a profile chunk in the index.** Reranking,
-  rewriting, threshold and profile-in-context are switchable at query time,
-  but the profile chunk is created at ingest, so the baseline cannot
+- **The baseline in the ablation still had a profile chunk in the index.**
+  Reranking, rewriting, threshold and profile-in-context are switchable at query
+  time, but the profile chunk is created at ingest, so the baseline could not
   un-index it.
 
 ## Reproducing
@@ -178,13 +261,14 @@ python -m eval.run_eval --config baseline         # one configuration
 python -m eval.run_eval --all                     # the whole ablation
 python -m eval.run_eval --config baseline --config "+profile" \
     --config "+rerank" --config "tuned (shipped)" --repeat 3
+python -m eval.run_shapes                         # across document shapes
 ```
 
 The harness runs the real providers, so it costs money and needs both API
 keys. It is deliberately not part of the offline test suite; `pytest` remains
 network-free.
 
-Raw per-question output, including every answer, retrieved page and citation
-report, is committed alongside this file as `results.json` (the ablation) and
-`results-repeats.json` (three repetitions of the four headline
-configurations).
+Raw per-question output, including every answer, retrieved page and retrieval
+telemetry, is committed alongside this file as `results.json` (the ablation),
+`results-repeats.json` (three repetitions of the four headline configurations)
+and `shapes.json` (the five document shapes).

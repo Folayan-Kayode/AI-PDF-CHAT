@@ -79,9 +79,16 @@ class Settings:
         "gemini-embedding-2",
     )
 
+    # The collection is created with an explicit vector space so distances
+    # mean the same thing across embedding models and documents. Changing this
+    # changes the space, so existing indexes must be re-embedded; the
+    # embedding_model / schema_version fingerprint detects and reports that.
+    CHROMA_SPACE = _env("CHROMA_SPACE", "cosine")
+
     # Identifies the vector space the index was built in. Bump it whenever
-    # the embedding model or its configuration changes.
-    EMBEDDING_SCHEMA_VERSION = _env_int("EMBEDDING_SCHEMA_VERSION", 1)
+    # the embedding model *or* the space changes, so a stale index is
+    # detected instead of queried.
+    EMBEDDING_SCHEMA_VERSION = _env_int("EMBEDDING_SCHEMA_VERSION", 2)
 
     # Chunks are embedded in small batches with a pause between them so a
     # large document does not trip the per-minute embedding quota.
@@ -111,6 +118,9 @@ class Settings:
 
     CHROMA_DIRECTORY = _env("CHROMA_DIRECTORY", "chroma_db")
 
+    # One row per ingested document: what the index was built from.
+    REGISTRY_PATH = _env("REGISTRY_PATH", "registry.sqlite3")
+
     # A single unbounded write can exceed what one SQLite transaction can
     # commit, so index writes are chunked and retried.
     CHROMA_WRITE_BATCH_SIZE = _env_int("CHROMA_WRITE_BATCH_SIZE", 200)
@@ -127,9 +137,13 @@ class Settings:
 
     MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
-    MAX_PAGES_PER_DOCUMENT = _env_int("MAX_PAGES_PER_DOCUMENT", 300)
+    # Coarse guards, deliberately generous: the real constraints are the
+    # upload size, the embedding quota and ingest wall-clock, not a document's
+    # shape. These exist to stop a pathological file, not to reject an unusual
+    # one, and they match what the evaluation harness ingests.
+    MAX_PAGES_PER_DOCUMENT = _env_int("MAX_PAGES_PER_DOCUMENT", 2000)
 
-    MAX_CHUNKS_PER_DOCUMENT = _env_int("MAX_CHUNKS_PER_DOCUMENT", 1500)
+    MAX_CHUNKS_PER_DOCUMENT = _env_int("MAX_CHUNKS_PER_DOCUMENT", 20000)
 
     MAX_FILENAME_LENGTH = _env_int("MAX_FILENAME_LENGTH", 200)
 
@@ -147,13 +161,29 @@ class Settings:
     # reranking is not, so it pays to cast a wide net first.
     RETRIEVAL_CANDIDATES = _env_int("RETRIEVAL_CANDIDATES", 20)
 
-    # Chunks further away than this are treated as noise. 0.60 is measured,
-    # not guessed: on the evaluation set it matches the accuracy of 0.75 with
-    # a better MRR (0.75 vs 0.74) at roughly half the cost per question,
-    # because filtering weak matches shrinks the prompt.
-    RETRIEVAL_MAX_DISTANCE = _env_float("RETRIEVAL_MAX_DISTANCE", 0.60)
+    # An absolute distance is not meaningful across embedding models and
+    # documents: broad questions ("what is this document about?") sit far from
+    # every chunk in a way that specific questions do not, so a fixed cut
+    # deletes the broad ones entirely. Selection is therefore *relative* to
+    # the best candidate for each query.
+    #
+    # Keep a candidate when its distance is within both the multiplicative
+    # margin and the additive slack of the best match. Two terms because a
+    # pure multiplier is too tight when the best distance is small.
+    RETRIEVAL_RELATIVE_MARGIN = _env_float("RETRIEVAL_RELATIVE_MARGIN", 1.15)
+
+    RETRIEVAL_ABSOLUTE_SLACK = _env_float("RETRIEVAL_ABSOLUTE_SLACK", 0.10)
+
+    # A noise floor, not a selector: its only job is to reject obvious
+    # nonsense when even the best match is unrelated. Distances are cosine,
+    # so the useful range is [0, 2].
+    RETRIEVAL_MAX_DISTANCE = _env_float("RETRIEVAL_MAX_DISTANCE", 1.50)
 
     MAX_CONTEXT_CHARS = _env_int("MAX_CONTEXT_CHARS", 12000)
+
+    # A character budget alone silently means something very different for CJK
+    # text, where a character is roughly a token. Both budgets are applied.
+    MAX_CONTEXT_TOKENS = _env_int("MAX_CONTEXT_TOKENS", 3000)
 
     # ---------------- Retrieval quality ----------------------------------
     # Rewriting the question into search terms recovers questions whose
@@ -174,8 +204,10 @@ class Settings:
     RERANK_ENABLED = _env_bool("RERANK_ENABLED", False)
 
     # Only consulted when reranking is enabled: skip the call when the best
-    # match is already this close.
-    RERANK_SKIP_DISTANCE = _env_float("RERANK_SKIP_DISTANCE", 0.50)
+    # candidate stands out from the rest of the set for this query. Expressed
+    # as a ratio against the median candidate distance rather than an absolute
+    # constant, for the same reason as the retrieval cut.
+    RERANK_SKIP_RATIO = _env_float("RERANK_SKIP_RATIO", 0.60)
 
     RERANK_SNIPPET_CHARS = _env_int("RERANK_SNIPPET_CHARS", 300)
 
@@ -190,7 +222,12 @@ class Settings:
         10,
     )
 
-    DOCUMENT_SUMMARY_MAX_CHARS = _env_int("DOCUMENT_SUMMARY_MAX_CHARS", 600)
+    DOCUMENT_SUMMARY_MAX_CHARS = _env_int("DOCUMENT_SUMMARY_MAX_CHARS", 1200)
+
+    # The profile is built from the PDF's own metadata and bookmarks, which is
+    # free and exact. Set this to also pay for a model summary when the
+    # document already has an outline.
+    DOCUMENT_SUMMARY_ALWAYS = _env_bool("DOCUMENT_SUMMARY_ALWAYS", False)
 
     # The profile is supplied to the model with every question, alongside the
     # retrieved passages, because vector search does not surface it for the

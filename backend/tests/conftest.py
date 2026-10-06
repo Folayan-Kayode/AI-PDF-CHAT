@@ -19,6 +19,7 @@ os.environ["UPLOAD_DIRECTORY"] = str(_TMP_ROOT / "uploads")
 os.environ["CHROMA_DIRECTORY"] = str(_TMP_ROOT / "chroma_db")
 os.environ["LOG_LEVEL"] = "WARNING"
 os.environ["EMBEDDING_BATCH_DELAY_SECONDS"] = "0"
+os.environ["REGISTRY_PATH"] = str(_TMP_ROOT / "registry.sqlite3")
 
 # Retries must not make the suite sleep for real.
 os.environ["EMBEDDING_RETRY_BASE_SECONDS"] = "0"
@@ -68,8 +69,15 @@ def neutral_retrieval_defaults(monkeypatch):
     """
     from app.core.config import settings
 
+    # Selection is relative now; widen it so a unit test that is not about
+    # filtering sees every candidate regardless of the tuned margins.
     monkeypatch.setattr(settings, "RETRIEVAL_MAX_DISTANCE", 10.0)
-    monkeypatch.setattr(settings, "RERANK_SKIP_DISTANCE", 0.0)
+    monkeypatch.setattr(settings, "RETRIEVAL_RELATIVE_MARGIN", 10.0)
+    monkeypatch.setattr(settings, "RETRIEVAL_ABSOLUTE_SLACK", 10.0)
+    # 0 means "rerank whenever it is enabled", the previous behaviour.
+    monkeypatch.setattr(settings, "RERANK_SKIP_RATIO", 0.0)
+    # Unit tests that are not about the token budget should not hit it.
+    monkeypatch.setattr(settings, "MAX_CONTEXT_TOKENS", 10**6)
 
 
 @pytest.fixture(autouse=True)

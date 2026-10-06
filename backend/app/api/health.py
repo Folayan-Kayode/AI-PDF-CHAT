@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from app.core.config import settings
 from app.database.chroma import get_database
 from app.rag.embeddings import get_embedding_model
+from app.rag.retriever import Retriever
 
 logger = logging.getLogger(__name__)
 
@@ -38,17 +39,19 @@ def health() -> dict[str, Any]:
 @router.get("/ready")
 def ready(deep: bool = False) -> dict[str, Any]:
     """
-    Readiness: the index exists and is usable.
+    Readiness: the index exists, is usable, and is described per document.
 
-    An empty index reports "degraded" with HTTP 200 - a fresh install is not
-    broken, it simply has no document yet - so a platform health check does
-    not flap. HTTP 503 is reserved for the vector store being unreachable.
+    Reports "degraded" (still HTTP 200) when the index is empty or does not
+    match the configured embedding settings — a fresh install is not broken,
+    it just has nothing usable yet — so a platform health check does not flap.
+    HTTP 503 is reserved for the vector store being unreachable.
     """
     try:
         database = get_database()
 
         indexed_chunks = database.count()
-        indexed_models = database.indexed_embedding_models()
+        status = Retriever(database=database).index_status()
+        documents = _document_summaries(database)
 
     except Exception as exc:
         logger.exception("readiness check failed: %s", exc)
@@ -58,13 +61,18 @@ def ready(deep: bool = False) -> dict[str, Any]:
             detail="The document index is unavailable.",
         ) from exc
 
-    model_matches = not indexed_models or settings.EMBEDDING_MODEL in indexed_models
+    usable = bool(
+        status["embedding_model_match"]
+        and status["schema_version_match"]
+        and status["vector_space_match"]
+        and indexed_chunks
+    )
 
     body: dict[str, Any] = {
-        "status": "ready" if indexed_chunks and model_matches else "degraded",
+        "status": "ready" if usable else "degraded",
         "indexed_chunks": indexed_chunks,
-        "indexed_embedding_models": sorted(indexed_models),
-        "embedding_model_match": model_matches,
+        "documents": documents,
+        **status,
         "generation_model": settings.MODEL_NAME,
         "embedding_model": settings.EMBEDDING_MODEL,
         "version": settings.API_VERSION,
@@ -74,6 +82,65 @@ def ready(deep: bool = False) -> dict[str, Any]:
         body["embedding_provider"] = _probe_embedding_provider()
 
     return body
+
+
+def _document_summaries(database: Any) -> list[dict[str, Any]]:
+    """
+    One entry per indexed document.
+
+    Read from the index rather than a side table so /ready cannot disagree
+    with what is actually stored; the registry is authoritative for the
+    filename.
+    """
+    try:
+        metadatas = (
+            database.collection.get(
+                limit=5000,
+                include=["metadatas"],
+            ).get("metadatas")
+            or []
+        )
+    except Exception:
+        return []
+
+    summaries: dict[str, dict[str, Any]] = {}
+
+    for metadata in metadatas:
+        if not metadata:
+            continue
+
+        document_id = metadata.get("document_id")
+
+        if not document_id:
+            continue
+
+        entry = summaries.setdefault(
+            document_id,
+            {
+                "document_id": document_id,
+                "chunks": 0,
+                "embedding_model": metadata.get("embedding_model"),
+                "schema_version": metadata.get("schema_version"),
+            },
+        )
+
+        entry["chunks"] += 1
+
+    try:
+        from app.database.registry import get_registry
+
+        for document_id, entry in summaries.items():
+            record = get_registry().get(document_id)
+
+            if record:
+                entry["filename"] = record.get("filename")
+                entry["pages"] = record.get("pages")
+                entry["created_at"] = record.get("created_at")
+    except Exception:
+        # The registry is a convenience; the index itself is authoritative.
+        pass
+
+    return [summaries[key] for key in sorted(summaries)]
 
 
 def _probe_embedding_provider() -> str:
