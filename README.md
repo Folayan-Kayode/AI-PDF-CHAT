@@ -73,12 +73,12 @@ Copy `.env.example` to `.env`. Both API keys are required and the app fails at s
 | `INGESTION_LOCK_TIMEOUT_SECONDS` | `0` | `0` rejects a concurrent upload immediately. |
 | `RETRIEVAL_TOP_K` | `5` | Chunks retrieved per question. |
 | `RETRIEVAL_CANDIDATES` | `20` | Candidates pulled before reranking. |
-| `RETRIEVAL_MAX_DISTANCE` | `0.75` | Matches weaker than this are treated as noise. Corpus-dependent. |
+| `RETRIEVAL_MAX_DISTANCE` | `0.60` | Matches weaker than this are treated as noise. Tuned from `docs/results.md`. |
 | `MAX_CONTEXT_CHARS` | `12000` | Prompt context budget. |
 | `QUERY_REWRITE_ENABLED` | `true` | Search with an LLM-rewritten query as well. One call per question. |
 | `QUERY_REWRITE_MAX_CHARS` | `200` | Length cap on the rewritten query. |
-| `RERANK_ENABLED` | `true` | Rerank candidates by reading them with the question. |
-| `RERANK_SKIP_DISTANCE` | `0.35` | Skip the rerank call when retrieval is already confident. |
+| `RERANK_ENABLED` | `false` | Rerank candidates by reading them with the question. Measured as not earning its call; see `docs/results.md`. |
+| `RERANK_SKIP_DISTANCE` | `0.50` | Only used when reranking is enabled. |
 | `RERANK_SNIPPET_CHARS` | `300` | Passage length shown to the reranker. |
 | `DOCUMENT_SUMMARY_ENABLED` | `true` | Index a profile chunk built from the opening pages. One call per document. |
 | `DOCUMENT_SUMMARY_SOURCE_PAGES` | `10` | Opening pages read to build the profile. |
@@ -112,6 +112,29 @@ pytest          # includes a coverage floor of 75% for app/
 ```
 
 Tests mock the LLM and the embedding provider, so they run without API keys or network access.
+
+## Evaluation
+
+The retrieval and prompting choices here are measured rather than assumed. The
+question set is committed at `backend/eval/questions.jsonl` — 30 questions that
+deliberately include covered categories, paraphrased wording, ambiguous
+multi-page answers, document-metadata questions, and questions the document
+cannot answer at all.
+
+```bash
+cd backend
+python -m eval.run_eval --limit 3     # smoke test: 3 questions, one config
+python -m eval.run_eval --all         # the full ablation matrix
+```
+
+It reports retrieval hit@5 and MRR, answer accuracy, abstention precision and
+recall, citation rate and citation validity, p50 latency, and estimated cost
+per question. It runs against the real providers, so it costs money and is
+deliberately kept out of the offline test suite.
+
+Results — the ablation table and the tuning decisions taken from it — are in
+[docs/results.md](docs/results.md).
+
 
 ## Optional extras
 

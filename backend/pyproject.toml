@@ -36,6 +36,10 @@ exclude_lines = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Make `app` and `eval` importable however pytest is invoked (the CI job runs
+# the `pytest` script, not `python -m pytest`, so the working directory is not
+# on sys.path by default).
+pythonpath = ["."]
 addopts = "-q --cov=app --cov-report=term-missing --cov-fail-under=75"
 filterwarnings = [
     "ignore::DeprecationWarning",

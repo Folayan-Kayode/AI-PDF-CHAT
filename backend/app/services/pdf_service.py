@@ -14,6 +14,7 @@ from app.core.exceptions import (
     RetrievalError,
 )
 from app.database.chroma import DOCUMENT_SUMMARY_KIND, ChromaDatabase, get_database
+from app.rag.citations import PROFILE_PAGE
 from app.rag.embeddings import EmbeddingModel, get_embedding_model
 from app.rag.loader import PDFLoader
 from app.rag.splitter import TextSplitter
@@ -29,10 +30,14 @@ _INGESTION_LOCK = threading.Lock()
 
 
 def _profile_chunk(profile: str) -> dict[str, Any]:
-    """The chunk that lets a document answer questions about itself."""
+    """The chunk that lets a document answer questions about itself.
+
+    Page 0 marks it as not being a real page of the document, and the answer
+    prompt asks for it to be cited as ``[document]``.
+    """
     return {
         "text": f"Document profile:\n{profile}",
-        "page": 1,
+        "page": PROFILE_PAGE,
         "chunk": 0,
         "kind": DOCUMENT_SUMMARY_KIND,
     }

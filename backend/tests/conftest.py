@@ -58,6 +58,21 @@ def client() -> TestClient:
 
 
 @pytest.fixture(autouse=True)
+def neutral_retrieval_defaults(monkeypatch):
+    """
+    Pin the tunable retrieval knobs for unit tests.
+
+    These values are tuned from the evaluation set and will change again, so
+    tests must not depend on whichever number currently ships. Tests that care
+    about a threshold set it themselves.
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "RETRIEVAL_MAX_DISTANCE", 10.0)
+    monkeypatch.setattr(settings, "RERANK_SKIP_DISTANCE", 0.0)
+
+
+@pytest.fixture(autouse=True)
 def clear_singletons():
     """
     Drop cached clients between tests.

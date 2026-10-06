@@ -140,7 +140,7 @@ def test_document_text_is_delimited_as_untrusted():
     assert "\n<document>\n" in prompt
     assert "\n</document>\n" in prompt
     assert "untrusted" in prompt.lower()
-    assert _embedded_context(prompt) == "Ordinary document text."
+    assert _embedded_context(prompt) == "[p.1] Ordinary document text."
 
 
 def test_injected_closing_delimiter_is_neutralised():
@@ -191,7 +191,8 @@ def test_context_is_truncated_to_the_configured_budget(monkeypatch):
     embedded = _embedded_context(pipeline.generator.prompts[0])
 
     assert len(embedded) <= 50
-    assert embedded == "a" * 40
+    assert embedded.endswith("a" * 40)
+    assert "b" * 40 not in embedded
 
 
 def test_context_budget_keeps_at_least_one_chunk():
@@ -331,3 +332,84 @@ def test_profile_does_not_consume_the_context_budget(monkeypatch):
     assert len(_embedded_context(prompt)) <= 50
     # ...while the profile is present in full.
     assert "Title: Principles of Information Security" in prompt
+
+
+# --------------------------------------------------------------------------
+# Citations
+# --------------------------------------------------------------------------
+
+
+def test_context_passages_are_labelled_with_their_page():
+    pipeline = _pipeline(
+        ["alpha", "beta"],
+        metadata=[{"page": 3, "chunk": 1}, {"page": 7, "chunk": 2}],
+    )
+
+    pipeline.ask("what?")
+
+    embedded = _embedded_context(pipeline.generator.prompts[0])
+
+    assert "[p.3] alpha" in embedded
+    assert "[p.7] beta" in embedded
+
+
+def test_prompt_asks_for_citations():
+    pipeline = _pipeline(["chunk text"])
+
+    pipeline.ask("what?")
+
+    prompt = pipeline.generator.prompts[0].lower()
+
+    assert "[p.n]" in prompt
+    assert "[document]" in prompt
+
+
+def test_valid_citations_are_reported():
+    pipeline = _pipeline(["chunk text"], answer="The answer is 42 [p.1].")
+
+    citations = pipeline.ask("what?")["citations"]
+
+    assert citations["cited_pages"] == [1]
+    assert citations["all_valid"] is True
+
+
+def test_invented_page_citation_is_flagged():
+    pipeline = _pipeline(["chunk text"], answer="The answer is 42 [p.99].")
+
+    citations = pipeline.ask("what?")["citations"]
+
+    assert citations["invalid_pages"] == [99]
+    assert citations["all_valid"] is False
+
+
+def test_document_citation_is_valid_when_a_profile_is_present():
+    pipeline = _pipeline(["chunk text"], answer="Title X [document].", profile=PROFILE)
+
+    citations = pipeline.ask("what is the title?")["citations"]
+
+    assert citations["document_cited"] is True
+    assert citations["all_valid"] is True
+
+
+def test_document_citation_is_invalid_without_a_profile():
+    pipeline = _pipeline(["chunk text"], answer="Title X [document].")
+
+    assert pipeline.ask("what?")["citations"]["all_valid"] is False
+
+
+def test_abstention_reports_no_citations():
+    pipeline = _pipeline(["chunk text"], answer=NOT_FOUND_MESSAGE)
+
+    citations = pipeline.ask("what?")["citations"]
+
+    assert citations["has_citation"] is False
+    assert citations["all_valid"] is False
+
+
+def test_uncited_answer_is_reported_as_uncited():
+    pipeline = _pipeline(["chunk text"], answer="Just an answer.")
+
+    citations = pipeline.ask("what?")["citations"]
+
+    assert citations["has_citation"] is False
+    assert citations["all_valid"] is False

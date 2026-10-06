@@ -147,9 +147,11 @@ class Settings:
     # reranking is not, so it pays to cast a wide net first.
     RETRIEVAL_CANDIDATES = _env_int("RETRIEVAL_CANDIDATES", 20)
 
-    # Chunks further away than this are treated as noise. The useful scale
-    # depends on the embedding model and the document, so it is tunable.
-    RETRIEVAL_MAX_DISTANCE = _env_float("RETRIEVAL_MAX_DISTANCE", 0.75)
+    # Chunks further away than this are treated as noise. 0.60 is measured,
+    # not guessed: on the evaluation set it matches the accuracy of 0.75 with
+    # a better MRR (0.75 vs 0.74) at roughly half the cost per question,
+    # because filtering weak matches shrinks the prompt.
+    RETRIEVAL_MAX_DISTANCE = _env_float("RETRIEVAL_MAX_DISTANCE", 0.60)
 
     MAX_CONTEXT_CHARS = _env_int("MAX_CONTEXT_CHARS", 12000)
 
@@ -160,11 +162,20 @@ class Settings:
 
     QUERY_REWRITE_MAX_CHARS = _env_int("QUERY_REWRITE_MAX_CHARS", 200)
 
-    # Reranking reorders candidates with the model. It costs one extra call
-    # per question, so it is skipped when retrieval is already confident.
-    RERANK_ENABLED = _env_bool("RERANK_ENABLED", True)
+    # Reranking reorders candidates with the model, reading each passage
+    # alongside the question. It only ever reorders, never discards, so it
+    # cannot cause an abstention.
+    #
+    # Measured off by default: on the evaluation set reranking *lowered*
+    # answer accuracy (0.83 -> 0.79) and abstention precision (0.67 -> 0.60)
+    # while tripling cost per question, so it did not earn its extra call.
+    # The code is kept and enabled with RERANK_ENABLED=true for corpora where
+    # it does pay for itself; see docs/results.md.
+    RERANK_ENABLED = _env_bool("RERANK_ENABLED", False)
 
-    RERANK_SKIP_DISTANCE = _env_float("RERANK_SKIP_DISTANCE", 0.35)
+    # Only consulted when reranking is enabled: skip the call when the best
+    # match is already this close.
+    RERANK_SKIP_DISTANCE = _env_float("RERANK_SKIP_DISTANCE", 0.50)
 
     RERANK_SNIPPET_CHARS = _env_int("RERANK_SNIPPET_CHARS", 300)
 

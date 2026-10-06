@@ -116,6 +116,15 @@ def test_model_default_is_deepseek():
     assert settings.MODEL_NAME == "deepseek-chat"
 
 
+def test_shipped_retrieval_defaults_are_sane():
+    # The class attributes are the shipped defaults; the unit-test fixture
+    # patches the instance, so these are the values a user actually gets.
+    assert 0.0 < config.Settings.RETRIEVAL_MAX_DISTANCE <= 1.0
+    assert 0.0 <= config.Settings.RERANK_SKIP_DISTANCE <= 1.0
+    assert config.Settings.RETRIEVAL_CANDIDATES >= config.Settings.RETRIEVAL_TOP_K
+    assert config.Settings.RETRIEVAL_TOP_K > 0
+
+
 def test_profile_and_retrieval_switches_are_booleans():
     assert isinstance(settings.DOCUMENT_PROFILE_IN_CONTEXT, bool)
     assert isinstance(settings.QUERY_REWRITE_ENABLED, bool)
