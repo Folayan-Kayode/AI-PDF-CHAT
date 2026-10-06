@@ -178,6 +178,42 @@ def abstention_stats(results: list[dict[str, Any]]) -> dict[str, float]:
     }
 
 
+def context_empty_rate(results: list[dict[str, Any]]) -> float:
+    """
+    Share of answered questions where zero passages reached the prompt.
+
+    The primary regression signal. Zero passages means the answer was generated
+    from the document profile alone, which reads as confidently grounded
+    because nothing in the answer says otherwise. A 0.60 absolute distance
+    threshold scored well on hit@5, accuracy and cost while this was 100% on
+    broad questions, which is why it now has a name and a column.
+    """
+    answered = [result for result in results if not result.get("abstained")]
+
+    if not answered:
+        return 0.0
+
+    empty = sum(1 for result in answered if not result.get("passages_supplied"))
+
+    return empty / len(answered)
+
+
+def profile_only_rate(results: list[dict[str, Any]]) -> float:
+    """
+    Share of answered questions citing nothing but [document].
+
+    The same failure seen from the answer's side rather than retrieval's.
+    """
+    answered = [result for result in results if not result.get("abstained")]
+
+    if not answered:
+        return 0.0
+
+    profile_only = sum(1 for result in answered if result.get("cited_document_only"))
+
+    return profile_only / len(answered)
+
+
 def citation_stats(results: list[dict[str, Any]]) -> dict[str, float]:
     """
     How often answers cite, and how often those citations check out.
@@ -268,5 +304,8 @@ def summarise(results: list[dict[str, Any]], k: int = 5) -> dict[str, Any]:
 
     summary.update(abstention_stats(results))
     summary.update(citation_stats(results))
+
+    summary["context_empty_rate"] = context_empty_rate(results)
+    summary["profile_only_rate"] = profile_only_rate(results)
 
     return summary

@@ -7,10 +7,12 @@ from eval.metrics import (
     abstention_stats,
     answer_matches,
     citation_stats,
+    context_empty_rate,
     estimate_cost,
     estimate_tokens,
     hit_at_k,
     normalise,
+    profile_only_rate,
     reciprocal_rank,
     summarise,
 )
@@ -226,6 +228,8 @@ def _question(
     latency=1.0,
     cost=0.0,
     calls=None,
+    passages_supplied=5,
+    cited_document_only=False,
 ):
     return {
         "answerable": answerable,
@@ -239,7 +243,61 @@ def _question(
         "latency_seconds": latency,
         "cost_usd": cost,
         "calls": calls or {"calls": {"generate": 3}},
+        "passages_supplied": passages_supplied,
+        "cited_document_only": cited_document_only,
     }
+
+
+# --------------------------------------------------------------------------
+# Context emptiness: the regression signal
+# --------------------------------------------------------------------------
+
+
+def test_context_empty_rate_counts_answered_questions_with_no_passages():
+    results = [
+        _question(passages_supplied=5),
+        _question(passages_supplied=0),
+        _question(passages_supplied=0),
+        _question(passages_supplied=0, abstained=True),
+    ]
+
+    # The abstention is excluded: no passages is expected there.
+    assert context_empty_rate(results) == pytest.approx(2 / 3)
+
+
+def test_context_empty_rate_is_zero_when_nothing_was_answered():
+    assert context_empty_rate([_question(abstained=True)]) == 0.0
+    assert context_empty_rate([]) == 0.0
+
+
+def test_context_empty_rate_is_zero_when_every_answer_had_passages():
+    assert context_empty_rate([_question(), _question()]) == 0.0
+
+
+def test_profile_only_rate_counts_answers_citing_only_the_document():
+    results = [
+        _question(cited_document_only=False),
+        _question(passages_supplied=0, cited_document_only=True),
+        _question(passages_supplied=0, cited_document_only=True, abstained=True),
+    ]
+
+    assert profile_only_rate(results) == pytest.approx(0.5)
+
+
+def test_profile_only_rate_is_zero_when_nothing_was_answered():
+    assert profile_only_rate([]) == 0.0
+
+
+def test_summarise_reports_both_emptiness_rates():
+    results = [
+        _question(),
+        _question(passages_supplied=0, cited_document_only=True),
+    ]
+
+    summary = summarise(results)
+
+    assert summary["context_empty_rate"] == pytest.approx(0.5)
+    assert summary["profile_only_rate"] == pytest.approx(0.5)
 
 
 def test_summarise_returns_empty_for_no_results():

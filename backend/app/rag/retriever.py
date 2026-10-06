@@ -27,6 +27,8 @@ _EMPTY_RESULT: dict[str, Any] = {
     "distances": [],
     "considered_candidates": 0,
     "best_distance": None,
+    "cut_distance": None,
+    "candidate_distances": [],
 }
 
 
@@ -156,10 +158,19 @@ class Retriever:
 
         top_k = n_results or settings.RETRIEVAL_TOP_K
 
-        candidates, considered = self._gather_candidates(question, top_k)
+        candidates, considered, distribution = self._gather_candidates(question, top_k)
 
         if not candidates:
-            return dict(_EMPTY_RESULT)
+            # The index returned candidates but the filter removed every one.
+            # Report what was seen rather than a bare zero, so a diagnosis can
+            # tell "nothing was found" apart from "everything was discarded".
+            empty = dict(_EMPTY_RESULT)
+            empty["considered_candidates"] = considered
+            empty["candidate_distances"] = distribution
+            empty["best_distance"] = distribution[0] if distribution else None
+            empty["cut_distance"] = self._cut(distribution[0]) if distribution else None
+
+            return empty
 
         if self._should_rerank(candidates, top_k):
             candidates = self._apply_rerank(question, candidates)
@@ -172,6 +183,10 @@ class Retriever:
             "distances": [candidate.distance for candidate in selected],
             "considered_candidates": considered,
             "best_distance": selected[0].distance if selected else None,
+            # The threshold actually in force for this query, which is what a
+            # diagnosis needs to compare against the distances observed.
+            "cut_distance": self._cut(selected[0].distance) if selected else None,
+            "candidate_distances": distribution,
         }
 
     # ------------------------------------------------------------------
@@ -182,15 +197,17 @@ class Retriever:
         self,
         question: str,
         top_k: int,
-    ) -> tuple[list[Candidate], int]:
+    ) -> tuple[list[Candidate], int, list[float]]:
         """
         Search with the question and a rewritten variant, then merge.
 
         Searching twice keeps the original wording in play, so a poor rewrite
         cannot lose a chunk the original query would have found.
 
-        Returns the selected candidates and how many were considered before
-        selection, which is what makes a silent retrieval failure visible.
+        Returns the selected candidates, how many were considered before
+        selection (which is what makes a silent retrieval failure visible) and
+        the sorted distance of every considered candidate, so a relative margin
+        can be chosen from data rather than by trial.
         """
         queries = [question]
 
@@ -224,7 +241,9 @@ class Retriever:
 
         ordered = sorted(merged.values(), key=lambda candidate: candidate.distance)
 
-        return self._select(ordered, top_k), len(ordered)
+        distribution = [round(candidate.distance, 4) for candidate in ordered]
+
+        return self._select(ordered, top_k), len(ordered), distribution
 
     @staticmethod
     def _cut(best_distance: float) -> float:

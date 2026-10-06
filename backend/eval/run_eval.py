@@ -18,9 +18,12 @@ configuration, is measured against an unchanged set.
 """
 
 import argparse
+import hashlib
 import json
 import logging
+import subprocess
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -280,6 +283,9 @@ def run_one(question: dict[str, Any], counter: CallCounter, pipeline: Any) -> di
 
     calls = counter.as_dict()
 
+    citations = result.get("citations") or {}
+    retrieval = result.get("retrieval") or {}
+
     return {
         "id": question["id"],
         "category": question["category"],
@@ -290,10 +296,21 @@ def run_one(question: dict[str, Any], counter: CallCounter, pipeline: Any) -> di
         "retrieved_pages": retrieved_pages,
         "abstained": abstained,
         "correct": correct,
-        "citations": result.get("citations") or {},
+        "citations": citations,
         "latency_seconds": latency,
         "calls": calls,
         "cost_usd": estimate_cost(calls),
+        # The fields that make a silent retrieval failure visible. Without
+        # these, a configuration can score well on accuracy and cost while
+        # sending no context at all.
+        "passages_supplied": retrieval.get("retrieved_chunks", 0),
+        "candidates_returned": retrieval.get("considered_candidates", 0),
+        "best_distance": retrieval.get("best_distance"),
+        "cut_distance": retrieval.get("cut_distance"),
+        "profile_supplied": retrieval.get("profile_used", False),
+        "cited_document_only": bool(citations.get("document_cited"))
+        and not citations.get("cited_pages"),
+        "candidate_distances": retrieval.get("candidate_distances") or [],
     }
 
 
@@ -373,8 +390,8 @@ def to_markdown(runs: list[dict[str, Any]]) -> str:
     """Render the results table."""
     header = (
         "| Configuration | hit@5 | MRR | Answer acc. | Abstain P | Abstain R | "
-        "Cited | Citations valid | p50 s | $/question | calls/q |\n"
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+        "Cited | Citations valid | Empty ctx | Profile only | p50 s | $/question | calls/q |\n"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
     )
 
     rows = []
@@ -391,12 +408,113 @@ def to_markdown(runs: list[dict[str, Any]]) -> str:
             f"| {summary['abstention_recall']:.2f} "
             f"| {summary['citation_rate']:.2f} "
             f"| {summary['citation_validity']:.2f} "
+            f"| {summary.get('context_empty_rate', 0.0):.2f} "
+            f"| {summary.get('profile_only_rate', 0.0):.2f} "
             f"| {summary['latency_p50_seconds']:.1f} "
             f"| {summary['cost_per_question_usd']:.5f} "
             f"| {summary['calls_per_question']:.1f} |"
         )
 
     return header + "\n".join(rows) + "\n"
+
+
+# --------------------------------------------------------------------------
+# Output versioning
+# --------------------------------------------------------------------------
+
+# Bump when the shape of a results file changes, so a reader can tell whether
+# it understands the file rather than guessing from the fields present.
+RESULTS_SCHEMA_VERSION = 1
+
+
+def git_revision() -> str | None:
+    """The commit a run was produced from, if this is a git checkout."""
+    try:
+        return (
+            subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=Path(__file__).resolve().parent,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+            or None
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def document_identity(path: Path) -> dict[str, Any]:
+    """
+    Identify the corpus a run describes.
+
+    The filename alone is not enough: the same book can be re-exported, and an
+    evaluation that cannot say which bytes it measured is not evidence.
+    """
+    if not path.exists():
+        return {"path": str(path), "exists": False}
+
+    digest = hashlib.sha256()
+
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+
+    return {
+        "path": str(path),
+        "name": path.name,
+        "bytes": path.stat().st_size,
+        "sha256_16": digest.hexdigest()[:16],
+        "exists": True,
+    }
+
+
+def run_limits() -> dict[str, Any]:
+    """The settings that materially change a result, recorded alongside it."""
+    return {
+        "max_pages_per_document": settings.MAX_PAGES_PER_DOCUMENT,
+        "max_chunks_per_document": settings.MAX_CHUNKS_PER_DOCUMENT,
+        "retrieval_max_distance": settings.RETRIEVAL_MAX_DISTANCE,
+        "retrieval_relative_margin": settings.RETRIEVAL_RELATIVE_MARGIN,
+        "retrieval_absolute_slack": settings.RETRIEVAL_ABSOLUTE_SLACK,
+        "retrieval_top_k": settings.RETRIEVAL_TOP_K,
+        "rerank_enabled": settings.RERANK_ENABLED,
+        "embedding_model": settings.EMBEDDING_MODEL,
+        "embedding_schema_version": settings.EMBEDDING_SCHEMA_VERSION,
+        "chroma_space": settings.CHROMA_SPACE,
+        "document_summary_always": settings.DOCUMENT_SUMMARY_ALWAYS,
+    }
+
+
+def build_envelope(
+    runs: list[dict[str, Any]],
+    document: Path,
+    questions: Path | None = None,
+    kind: str = "ablation",
+) -> dict[str, Any]:
+    """Wrap a run list with the provenance a future reader needs."""
+    return {
+        "schema_version": RESULTS_SCHEMA_VERSION,
+        "kind": kind,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "revision": git_revision(),
+        "document": document_identity(document),
+        "questions": {
+            "path": str(questions) if questions else None,
+            "count": sum(len(run.get("results", [])) for run in runs),
+        },
+        "limits": run_limits(),
+        "runs": runs,
+    }
+
+
+def load_runs(path: Path | str) -> list[dict[str, Any]]:
+    """Read the runs from a versioned envelope or from a bare list."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+
+    if isinstance(data, list):
+        return data
+
+    return data.get("runs", [])
 
 
 def main() -> None:
@@ -455,7 +573,13 @@ def main() -> None:
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps(runs, indent=2), encoding="utf-8")
+        args.out.write_text(
+            json.dumps(
+                build_envelope(runs, args.document, args.questions),
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
         print(f"\nwrote {args.out}")
 
     if args.markdown:

@@ -18,11 +18,12 @@ Usage, from backend/:
 import argparse
 import json
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from app.rag.pipeline import RAGPipeline
-from eval.run_eval import clear_caches, ingest
+from eval.run_eval import clear_caches, git_revision, ingest, run_limits
 
 logging.basicConfig(level=logging.WARNING)
 
@@ -101,7 +102,16 @@ def run_shape(shape: dict[str, Any], chunk_size: int = 1000) -> dict[str, Any]:
             "retrieved_chunks": retrieval.get("retrieved_chunks", 0),
             "considered_candidates": retrieval.get("considered_candidates", 0),
             "best_distance": retrieval.get("best_distance"),
+            "cut_distance": retrieval.get("cut_distance"),
             "profile_used": retrieval.get("profile_used", False),
+            # The two fields the blindness hid: how much context was actually
+            # supplied, and whether the answer came only from the profile.
+            "passages_supplied": retrieval.get("retrieved_chunks", 0),
+            "candidates_returned": retrieval.get("considered_candidates", 0),
+            "profile_supplied": retrieval.get("profile_used", False),
+            "cited_document_only": bool((result.get("citations") or {}).get("document_cited"))
+            and not (result.get("citations") or {}).get("cited_pages"),
+            "candidate_distances": retrieval.get("candidate_distances") or [],
         }
 
         results.append(row)
@@ -127,6 +137,8 @@ def run_shape(shape: dict[str, Any], chunk_size: int = 1000) -> dict[str, Any]:
 
 def summarise(shape: dict[str, Any]) -> dict[str, Any]:
     """Per-document summary row."""
+    from eval.metrics import context_empty_rate, profile_only_rate
+
     results = shape["results"]
 
     if not results:
@@ -158,23 +170,30 @@ def summarise(shape: dict[str, Any]) -> dict[str, Any]:
         ),
         "empty_context": len(empty),
         "min_chunks": min(row["retrieved_chunks"] for row in results),
+        "context_empty_rate": context_empty_rate(results),
+        "profile_only_rate": profile_only_rate(results),
     }
 
 
 def to_markdown(rows: list[dict[str, Any]]) -> str:
     header = (
         "| Document | Shape | Questions | Answered | Abstained correctly | "
-        "Questions with no passages | Fewest passages |\n"
-        "| --- | --- | --- | --- | --- | --- | --- |\n"
+        "Empty ctx rate | Profile-only rate | Fewest passages |\n"
+        "| --- | --- | --- | --- | --- | --- | --- | --- |\n"
     )
 
     body = []
 
     for row in rows:
+        empty_rate = row.get("context_empty_rate", "n/a")
+        profile_rate = row.get("profile_only_rate", "n/a")
+
         body.append(
             f"| `{row['document']}` | {row['description']} | {row['questions']} "
             f"| {row['answered']} | {row.get('abstained_correctly', 'n/a')} "
-            f"| {row['empty_context']} | {row['min_chunks']} |"
+            f"| {empty_rate if empty_rate == 'n/a' else f'{empty_rate:.2f}'} "
+            f"| {profile_rate if profile_rate == 'n/a' else f'{profile_rate:.2f}'} "
+            f"| {row['min_chunks']} |"
         )
 
     return header + "\n".join(body) + "\n"
@@ -212,7 +231,21 @@ def main() -> None:
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps(runs, indent=2), encoding="utf-8")
+        args.out.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "kind": "shapes",
+                    "generated_at": datetime.now(UTC).isoformat(),
+                    "revision": git_revision(),
+                    "documents": [run["name"] for run in runs],
+                    "limits": run_limits(),
+                    "runs": runs,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
         print(f"wrote {args.out}")
 
     if args.markdown:

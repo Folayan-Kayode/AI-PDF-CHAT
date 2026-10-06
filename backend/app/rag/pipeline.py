@@ -165,7 +165,9 @@ class RAGPipeline:
             "retrieved_chunks": len(documents),
             "considered_candidates": results.get("considered_candidates", 0),
             "best_distance": results.get("best_distance"),
+            "cut_distance": results.get("cut_distance"),
             "profile_used": bool(profile),
+            "candidate_distances": results.get("candidate_distances") or [],
         }
 
         if not documents:
@@ -174,9 +176,11 @@ class RAGPipeline:
             # rather than hidden behind a confident sentence.
             logger.warning(
                 "no passages were retrieved (considered %s candidates, best "
-                "distance %s, profile %s); answering from the profile only",
+                "distance %s, cut %s, profile %s); answering from the profile "
+                "only",
                 retrieval["considered_candidates"],
                 retrieval["best_distance"],
+                retrieval["cut_distance"],
                 "available" if profile else "unavailable",
             )
 

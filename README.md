@@ -27,7 +27,7 @@ Single-document RAG chat over an uploaded PDF, built with FastAPI, Streamlit, De
 - Treats document text as untrusted: it is delimited, closing delimiters are escaped, and the model is told to ignore instructions found inside it.
 - Budgets the prompt in both characters and estimated tokens, so a CJK document cannot silently blow it.
 - Answers in the language of the question, and detects abstention with a language-neutral sentinel rather than an English sentence, so it works on non-English documents and cannot be tripped by a document that quotes a refusal.
-- Reports retrieval telemetry (`retrieved_chunks`, `considered_candidates`, `best_distance`, `profile_used`) with every answer, and the UI says so explicitly when an answer came from the document profile alone.
+- Reports retrieval telemetry (`retrieved_chunks`, `considered_candidates`, `best_distance`, `cut_distance`, `profile_used`) with every answer, and the UI says so explicitly when an answer came from the document profile alone.
 
 **Operations**
 - Maps failures to real status codes as JSON: `409` concurrent ingest, `413` too large, `429` rate limit with `Retry-After`, `502`/`503`/`504` upstream failures.
@@ -57,7 +57,7 @@ Copy `.env.example` to `.env`. Both API keys are required and the app fails at s
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | OpenAI-compatible endpoint. |
 | `GENERATION_TIMEOUT_SECONDS` | `60` | Timeout for the generation call. |
 | `EMBEDDING_MODEL` | `gemini-embedding-2` | Google embedding model. |
-| `EMBEDDING_SCHEMA_VERSION` | `1` | Bump when the embedding vector space changes. |
+| `EMBEDDING_SCHEMA_VERSION` | `2` | Bump when the embedding vector space changes. |
 | `EMBEDDING_BATCH_SIZE` | `64` | Chunks per embedding request. |
 | `EMBEDDING_BATCH_DELAY_SECONDS` | `0.25` | Pause between embedding batches. |
 | `EMBEDDING_MAX_RETRIES` | `4` | Attempts per embedding batch. |
@@ -147,7 +147,11 @@ standard and a 658-page textbook using the shipped settings, and fails loudly
 if any question is answered with an empty context.
 
 Results — the ablation, the tuning decisions taken from it, and the
-per-document shape results — are in [docs/results.md](docs/results.md).
+per-document shape results — are in [docs/results.md](docs/results.md). The
+choices and their reversals are recorded in
+[docs/decisions.md](docs/decisions.md), and
+[docs/release-checklist.md](docs/release-checklist.md) lists what to run before
+changing a retrieval default.
 
 
 ## Optional extras

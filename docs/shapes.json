@@ -1,213 +1,431 @@
-[
-  {
-    "name": "sheet",
-    "description": "2-page form, no bookmarks",
-    "skipped": false,
-    "results": [
-      {
-        "question": "How often must the site induction be renewed?",
-        "answer": "Every 12 months. [p.1]",
-        "answerable": true,
-        "abstained": false,
-        "correct": true,
-        "retrieved_chunks": 2,
-        "considered_candidates": 2,
-        "best_distance": 0.18688762187957764,
-        "profile_used": true
-      },
-      {
-        "question": "Who is the site manager?",
-        "answer": "The site manager is D. Okonkwo. [p.1]",
-        "answerable": true,
-        "abstained": false,
-        "correct": true,
-        "retrieved_chunks": 2,
-        "considered_candidates": 2,
-        "best_distance": 0.30049002170562744,
-        "profile_used": true
-      },
-      {
-        "question": "What is the recipe for a chocolate cake?",
-        "answer": "I couldn't find that information in the uploaded document.",
-        "answerable": false,
-        "abstained": true,
-        "correct": true,
-        "retrieved_chunks": 2,
-        "considered_candidates": 2,
-        "best_distance": 0.4866529107093811,
-        "profile_used": true
-      }
-    ]
+{
+  "schema_version": 1,
+  "kind": "shapes",
+  "generated_at": "2026-10-06T19:39:37.262700+00:00",
+  "revision": "8aac633",
+  "documents": [
+    "sheet",
+    "table",
+    "german",
+    "standard",
+    "book"
+  ],
+  "limits": {
+    "max_pages_per_document": 2000,
+    "max_chunks_per_document": 20000,
+    "retrieval_max_distance": 1.5,
+    "retrieval_relative_margin": 1.15,
+    "retrieval_absolute_slack": 0.1,
+    "retrieval_top_k": 5,
+    "rerank_enabled": false,
+    "embedding_model": "gemini-embedding-2",
+    "embedding_schema_version": 2,
+    "chroma_space": "cosine",
+    "document_summary_always": false
   },
-  {
-    "name": "table",
-    "description": "table of sensor readings",
-    "skipped": false,
-    "results": [
-      {
-        "question": "What was the temperature on 3 March 2024?",
-        "answer": "14.5 [p.1]",
-        "answerable": true,
-        "abstained": false,
-        "correct": true,
-        "retrieved_chunks": 2,
-        "considered_candidates": 2,
-        "best_distance": 0.27833032608032227,
-        "profile_used": true
-      },
-      {
-        "question": "Which sensor was installed on 5 March 2024?",
-        "answer": "Sensor N-02 was installed on 5 March 2024 [p.1].",
-        "answerable": true,
-        "abstained": false,
-        "correct": true,
-        "retrieved_chunks": 2,
-        "considered_candidates": 2,
-        "best_distance": 0.20705777406692505,
-        "profile_used": true
-      },
-      {
-        "question": "What is the capital of Mongolia?",
-        "answer": "I couldn't find that information in the uploaded document.",
-        "answerable": false,
-        "abstained": true,
-        "correct": true,
-        "retrieved_chunks": 2,
-        "considered_candidates": 2,
-        "best_distance": 0.5015217065811157,
-        "profile_used": true
-      }
-    ]
-  },
-  {
-    "name": "german",
-    "description": "1-page German document",
-    "skipped": false,
-    "results": [
-      {
-        "question": "Wie oft erfolgt die Wartung der Heizungsanlage?",
-        "answer": "Die Wartung erfolgt alle sechs Monate durch einen Techniker. [p.1]",
-        "answerable": true,
-        "abstained": false,
-        "correct": true,
-        "retrieved_chunks": 2,
-        "considered_candidates": 2,
-        "best_distance": 0.26633548736572266,
-        "profile_used": true
-      },
-      {
-        "question": "Was ist die Hauptstadt der Mongolei?",
-        "answer": "I couldn't find that information in the uploaded document.",
-        "answerable": false,
-        "abstained": true,
-        "correct": true,
-        "retrieved_chunks": 2,
-        "considered_candidates": 2,
-        "best_distance": 0.5465204119682312,
-        "profile_used": true
-      }
-    ]
-  },
-  {
-    "name": "standard",
-    "description": "157-page technical standard",
-    "skipped": false,
-    "results": [
-      {
-        "question": "What is this document about?",
-        "answer": "This document is the CEDIA/CTA-RP22 Immersive Audio Design Recommended Practice, which provides guidance for the design and specification of audio reproduction within private entertainment spaces, helping industry professionals deliver optimal performance for equipment and space [document][p.3]. It outlines audio design and engineering parameters relevant to proper audio performance in a private entertainment space, aiming to render content as close as possible to the intent of the content creator [p.12].",
-        "answerable": true,
-        "abstained": false,
-        "correct": true,
-        "retrieved_chunks": 5,
-        "considered_candidates": 9,
-        "best_distance": 0.3494846820831299,
-        "profile_used": true
-      },
-      {
-        "question": "What is the title of this document?",
-        "answer": "The title of this document is CEDIA/CTA-RP22 Immersive Audio Design Recommended Practice [document].",
-        "answerable": true,
-        "abstained": false,
-        "correct": true,
-        "retrieved_chunks": 5,
-        "considered_candidates": 7,
-        "best_distance": 0.3459441661834717,
-        "profile_used": true
-      },
-      {
-        "question": "List the sections of this document.",
-        "answer": "The document's sections include [document]:  - Foreword - Intellectual Property - Contents - Visual Table of Contents / Flowchart - i. Introduction [p.5] - ii. Scope [p.5] - iii. Contributors [p.5] - iv. References [p.5]   - Normative References [p.5]   - Informative References [p.5]   - References Acquisition [p.5] - v. Compliance Notation [p.5] - vi. Unit Conversions [p.5] - Section 1: GLOSSARY   - 1.1 Definitions [p.5]   - 1.2 Symbols and Abbreviations - Section 2: IMMERSIVE AUDIO OVERVIEW   - 2.1 Describing Immersive Audio Systems   - 2.2 Channel-based vs Object-based Audio     - 2.2.1 Beds and Active Objects     - 2.2.2 Mixing Room Audio Steering     - 2.2.3 Channel-based Content in an Immersive Audio Delivery Format     - 2.2.4 Rendering Objects - Section 3: AUDIO PERFORMANCE OBJECTIVES AND LEVELS   - 3.1 Performance Objectives for Audio     - 3.1.1 Dialog Clarity     - 3.1.2 Localization Accuracy     - 3.1.3 Sound Movement     - 3.1.4 Sound Field Immersion and Envelopment     - 3.1.5 Tonal Balance     - 3.1.6 Dynamic Range     - 3.1.7 Bass Impact     - 3.1.8 Audience Coverage     - 3.1.9 Sound Isolation   - 3.2 Immersive Audio Performance Levels     - 3.2.1 Individual Seating Posit  Additional sections listed in the contents include \"11 CALIBRation of Electro-Acoustics\" with 11.1 Room Performance Optimization [p.9] and 11.2 EQ Recommended Practice [p.9], as well as Appendix A [p.9], Appendix B [p.9], Appendix C [p.9], and the Bibliography [p.10].",
-        "answerable": true,
-        "abstained": false,
-        "correct": true,
-        "retrieved_chunks": 5,
-        "considered_candidates": 7,
-        "best_distance": 0.33068060874938965,
-        "profile_used": true
-      },
-      {
-        "question": "What is the recipe for a chocolate cake?",
-        "answer": "I couldn't find that information in the uploaded document.",
-        "answerable": false,
-        "abstained": true,
-        "correct": true,
-        "retrieved_chunks": 5,
-        "considered_candidates": 8,
-        "best_distance": 0.47377413511276245,
-        "profile_used": true
-      }
-    ]
-  },
-  {
-    "name": "book",
-    "description": "658-page textbook",
-    "skipped": false,
-    "results": [
-      {
-        "question": "What is this book about?",
-        "answer": "This book, *Principles of Information Security, 4th ed.* by Michael E. Whitman [document], provides a broad review of the entire field of information security, covering the terminology of the field, the history of the discipline, and strategies for managing an information security program [p.22]. Its essential tenet is that information security in the modern organization is a problem for management to solve, not one that technology alone can address [p.22]. It establishes a foundation for understanding information security by defining key terms, explaining essential concepts, and reviewing the origins of the field [p.22].",
-        "answerable": true,
-        "abstained": false,
-        "correct": true,
-        "retrieved_chunks": 5,
-        "considered_candidates": 10,
-        "best_distance": 0.3307400345802307,
-        "profile_used": true
-      },
-      {
-        "question": "List the chapters of this book.",
-        "answer": "Based on the table of contents passages provided, the chapters listed are:  - CHAPTER 1: Introduction to Information Security [p.11] - CHAPTER 5: Planning for Security [p.9] - CHAPTER 6: Security Technology: Firewalls and VPNs [p.9] - CHAPTER 7: Security Technology: Intrusion Detection and Prevention Systems, and Other Security Tools [p.9] - CHAPTER 8: Cryptography [p.9] - CHAPTER 9: Physical Security [p.9] - CHAPTER 10: Implementing Information Security [p.9] - CHAPTER 11 [p.9]  Note: Chapters 2, 3, and 4 are not shown in the supplied material.",
-        "answerable": true,
-        "abstained": false,
-        "correct": true,
-        "retrieved_chunks": 5,
-        "considered_candidates": 7,
-        "best_distance": 0.29556185007095337,
-        "profile_used": true
-      },
-      {
-        "question": "What is the title of this book?",
-        "answer": "Principles of Information Security, 4th ed. [document]",
-        "answerable": true,
-        "abstained": false,
-        "correct": true,
-        "retrieved_chunks": 5,
-        "considered_candidates": 8,
-        "best_distance": 0.33865100145339966,
-        "profile_used": true
-      },
-      {
-        "question": "What is the capital of Mongolia?",
-        "answer": "I couldn't find that information in the uploaded document.",
-        "answerable": false,
-        "abstained": true,
-        "correct": true,
-        "retrieved_chunks": 5,
-        "considered_candidates": 9,
-        "best_distance": 0.4649287462234497,
-        "profile_used": true
-      }
-    ]
-  }
-]
+  "runs": [
+    {
+      "name": "sheet",
+      "description": "2-page form, no bookmarks",
+      "skipped": false,
+      "results": [
+        {
+          "question": "How often must the site induction be renewed?",
+          "answer": "Every 12 months [p.1].",
+          "answerable": true,
+          "abstained": false,
+          "correct": true,
+          "retrieved_chunks": 2,
+          "considered_candidates": 2,
+          "best_distance": 0.18688762187957764,
+          "cut_distance": 0.2868876218795776,
+          "profile_used": true,
+          "passages_supplied": 2,
+          "candidates_returned": 2,
+          "profile_supplied": true,
+          "cited_document_only": false,
+          "candidate_distances": [
+            0.1869,
+            0.2429
+          ]
+        },
+        {
+          "question": "Who is the site manager?",
+          "answer": "The site manager is D. Okonkwo. [p.1]",
+          "answerable": true,
+          "abstained": false,
+          "correct": true,
+          "retrieved_chunks": 2,
+          "considered_candidates": 2,
+          "best_distance": 0.30049002170562744,
+          "cut_distance": 0.4004900217056274,
+          "profile_used": true,
+          "passages_supplied": 2,
+          "candidates_returned": 2,
+          "profile_supplied": true,
+          "cited_document_only": false,
+          "candidate_distances": [
+            0.3005,
+            0.3565
+          ]
+        },
+        {
+          "question": "What is the recipe for a chocolate cake?",
+          "answer": "I couldn't find that information in the uploaded document.",
+          "answerable": false,
+          "abstained": true,
+          "correct": true,
+          "retrieved_chunks": 2,
+          "considered_candidates": 2,
+          "best_distance": 0.4866529107093811,
+          "cut_distance": 0.5866529107093811,
+          "profile_used": true,
+          "passages_supplied": 2,
+          "candidates_returned": 2,
+          "profile_supplied": true,
+          "cited_document_only": false,
+          "candidate_distances": [
+            0.4867,
+            0.5448
+          ]
+        }
+      ]
+    },
+    {
+      "name": "table",
+      "description": "table of sensor readings",
+      "skipped": false,
+      "results": [
+        {
+          "question": "What was the temperature on 3 March 2024?",
+          "answer": "The temperature on 3 March 2024 was 14.5 \u00b0C [p.1].",
+          "answerable": true,
+          "abstained": false,
+          "correct": true,
+          "retrieved_chunks": 2,
+          "considered_candidates": 2,
+          "best_distance": 0.27833032608032227,
+          "cut_distance": 0.37833032608032224,
+          "profile_used": true,
+          "passages_supplied": 2,
+          "candidates_returned": 2,
+          "profile_supplied": true,
+          "cited_document_only": false,
+          "candidate_distances": [
+            0.2783,
+            0.3434
+          ]
+        },
+        {
+          "question": "Which sensor was installed on 5 March 2024?",
+          "answer": "Sensor N-02 was installed on 5 March 2024. [p.1]",
+          "answerable": true,
+          "abstained": false,
+          "correct": true,
+          "retrieved_chunks": 2,
+          "considered_candidates": 2,
+          "best_distance": 0.20705777406692505,
+          "cut_distance": 0.307057774066925,
+          "profile_used": true,
+          "passages_supplied": 2,
+          "candidates_returned": 2,
+          "profile_supplied": true,
+          "cited_document_only": false,
+          "candidate_distances": [
+            0.2071,
+            0.2677
+          ]
+        },
+        {
+          "question": "What is the capital of Mongolia?",
+          "answer": "I couldn't find that information in the uploaded document.",
+          "answerable": false,
+          "abstained": true,
+          "correct": true,
+          "retrieved_chunks": 2,
+          "considered_candidates": 2,
+          "best_distance": 0.5015217065811157,
+          "cut_distance": 0.6015217065811157,
+          "profile_used": true,
+          "passages_supplied": 2,
+          "candidates_returned": 2,
+          "profile_supplied": true,
+          "cited_document_only": false,
+          "candidate_distances": [
+            0.5015,
+            0.5413
+          ]
+        }
+      ]
+    },
+    {
+      "name": "german",
+      "description": "1-page German document",
+      "skipped": false,
+      "results": [
+        {
+          "question": "Wie oft erfolgt die Wartung der Heizungsanlage?",
+          "answer": "Die Wartung erfolgt alle sechs Monate durch einen Techniker. [p.1]",
+          "answerable": true,
+          "abstained": false,
+          "correct": true,
+          "retrieved_chunks": 2,
+          "considered_candidates": 2,
+          "best_distance": 0.2742392420768738,
+          "cut_distance": 0.37423924207687376,
+          "profile_used": true,
+          "passages_supplied": 2,
+          "candidates_returned": 2,
+          "profile_supplied": true,
+          "cited_document_only": false,
+          "candidate_distances": [
+            0.2742,
+            0.3368
+          ]
+        },
+        {
+          "question": "Was ist die Hauptstadt der Mongolei?",
+          "answer": "I couldn't find that information in the uploaded document.",
+          "answerable": false,
+          "abstained": true,
+          "correct": true,
+          "retrieved_chunks": 2,
+          "considered_candidates": 2,
+          "best_distance": 0.5465204119682312,
+          "cut_distance": 0.6465204119682312,
+          "profile_used": true,
+          "passages_supplied": 2,
+          "candidates_returned": 2,
+          "profile_supplied": true,
+          "cited_document_only": false,
+          "candidate_distances": [
+            0.5465,
+            0.6297
+          ]
+        }
+      ]
+    },
+    {
+      "name": "standard",
+      "description": "157-page technical standard",
+      "skipped": false,
+      "results": [
+        {
+          "question": "What is this document about?",
+          "answer": "This document is a CEDIA/CTA recommended practice (CEDIA/CTA-RP22) that provides guidance for the design and specification of audio reproduction within private entertainment spaces, aiming to deliver optimal performance for the equipment and space and to render content as close as possible to the intent of the content creator [p.3][p.12]. It outlines audio design and engineering parameters, and defines performance objectives, levels, and related parameters such as spatiality, dynamics, and timbre [p.12][p.42].",
+          "answerable": true,
+          "abstained": false,
+          "correct": true,
+          "retrieved_chunks": 5,
+          "considered_candidates": 9,
+          "best_distance": 0.3494846820831299,
+          "cut_distance": 0.44948468208312986,
+          "profile_used": true,
+          "passages_supplied": 5,
+          "candidates_returned": 9,
+          "profile_supplied": true,
+          "cited_document_only": false,
+          "candidate_distances": [
+            0.3495,
+            0.3516,
+            0.358,
+            0.3707,
+            0.3733,
+            0.4374,
+            0.4423,
+            0.4425,
+            0.4453
+          ]
+        },
+        {
+          "question": "What is the title of this document?",
+          "answer": "The title of this document is \"CEDIA/CTA-RP22 Immersive Audio Design Recommended Practice.\" [document]",
+          "answerable": true,
+          "abstained": false,
+          "correct": true,
+          "retrieved_chunks": 5,
+          "considered_candidates": 9,
+          "best_distance": 0.3459441661834717,
+          "cut_distance": 0.44594416618347166,
+          "profile_used": true,
+          "passages_supplied": 5,
+          "candidates_returned": 9,
+          "profile_supplied": true,
+          "cited_document_only": true,
+          "candidate_distances": [
+            0.3459,
+            0.3571,
+            0.358,
+            0.361,
+            0.3638,
+            0.3752,
+            0.3754,
+            0.3757,
+            0.3764
+          ]
+        },
+        {
+          "question": "List the sections of this document.",
+          "answer": "The document's sections are: Foreword; Intellectual Property; Contents; Visual Table of Contents / Flowchart; i. Introduction; ii. Scope; iii. Contributors; iv. References (with Normative References, Informative References, References Acquisition); v. Compliance Notation; vi. Unit Conversions; Section 1: GLOSSARY (1.1 Definitions, 1.2 Symbols and Abbreviations); Section 2: IMMERSIVE AUDIO OVERVIEW (2.1 Describing Immersive Audio Systems, 2.2 Channel-based vs Object-based Audio, with subsections 2.2.1\u20132.2.4); Section 3: AUDIO PERFORMANCE OBJECTIVES AND LEVELS (3.1 Performance Objectives for Audio with subsections 3.1.1\u20133.1.9, 3.2 Immersive Audio Performance Levels with 3.2.1 Individual Seating Posit) [document].",
+          "answerable": true,
+          "abstained": false,
+          "correct": true,
+          "retrieved_chunks": 5,
+          "considered_candidates": 7,
+          "best_distance": 0.33068060874938965,
+          "cut_distance": 0.4306806087493896,
+          "profile_used": true,
+          "passages_supplied": 5,
+          "candidates_returned": 7,
+          "profile_supplied": true,
+          "cited_document_only": true,
+          "candidate_distances": [
+            0.3307,
+            0.3409,
+            0.3671,
+            0.3702,
+            0.3709,
+            0.371,
+            0.3785
+          ]
+        },
+        {
+          "question": "What is the recipe for a chocolate cake?",
+          "answer": "I couldn't find that information in the uploaded document.",
+          "answerable": false,
+          "abstained": true,
+          "correct": true,
+          "retrieved_chunks": 5,
+          "considered_candidates": 8,
+          "best_distance": 0.47377413511276245,
+          "cut_distance": 0.5737741351127624,
+          "profile_used": true,
+          "passages_supplied": 5,
+          "candidates_returned": 8,
+          "profile_supplied": true,
+          "cited_document_only": false,
+          "candidate_distances": [
+            0.4738,
+            0.482,
+            0.4845,
+            0.4885,
+            0.4903,
+            0.5194,
+            0.5207,
+            0.5215
+          ]
+        }
+      ]
+    },
+    {
+      "name": "book",
+      "description": "658-page textbook",
+      "skipped": false,
+      "results": [
+        {
+          "question": "What is this book about?",
+          "answer": "This book, *Principles of Information Security, Fourth Edition*, provides a broad review of the entire field of information security, including the terminology of the field, the history of the discipline, and strategies for managing an information security program [p.22]. It is structured to follow the security systems development life cycle (SecSDLC) methodology [p.22]. Its essential tenet is that information security in the modern organization is a problem for management to solve, not one that technology alone can address [p.22].",
+          "answerable": true,
+          "abstained": false,
+          "correct": true,
+          "retrieved_chunks": 5,
+          "considered_candidates": 7,
+          "best_distance": 0.3307400345802307,
+          "cut_distance": 0.4307400345802307,
+          "profile_used": true,
+          "passages_supplied": 5,
+          "candidates_returned": 7,
+          "profile_supplied": true,
+          "cited_document_only": false,
+          "candidate_distances": [
+            0.3307,
+            0.3444,
+            0.3487,
+            0.3555,
+            0.3641,
+            0.3938,
+            0.3943
+          ]
+        },
+        {
+          "question": "List the chapters of this book.",
+          "answer": "\u6839\u636e\u63d0\u4f9b\u7684\u6750\u6599\uff0c\u672c\u4e66\u7684\u7ae0\u8282\u5982\u4e0b\uff1a  - \u7b2c1\u7ae0\uff1aIntroduction to Information Security [p.9] - \u7b2c2\u7ae0\uff1aThe Need for Security [p.9] - \u7b2c3\u7ae0\uff1aLegal, Ethical, and Professional Issues in Information Security [p.9] - \u7b2c4\u7ae0\uff1aRisk Management [p.9] - \u7b2c5\u7ae0\uff1aPlanning for Security [p.9] - \u7b2c6\u7ae0\uff1aSecurity Technology: Firewalls and VPNs [p.9] - \u7b2c7\u7ae0\uff1aSecurity Technology: Intrusion Detection and Prevention Systems, and Other Security Tools [p.9] - \u7b2c8\u7ae0\uff1aCryptography [p.9] - \u7b2c9\u7ae0\uff1aPhysical Security [p.9] - \u7b2c10\u7ae0\uff1aImplementing Information Security [p.9] - \u7b2c11\u7ae0\uff1aSecurity and Personnel [p.9] - \u7b2c12\u7ae0\uff1aInformation Security Maintenance [p.9]",
+          "answerable": true,
+          "abstained": false,
+          "correct": true,
+          "retrieved_chunks": 5,
+          "considered_candidates": 7,
+          "best_distance": 0.3152692914009094,
+          "cut_distance": 0.4152692914009094,
+          "profile_used": true,
+          "passages_supplied": 5,
+          "candidates_returned": 7,
+          "profile_supplied": true,
+          "cited_document_only": false,
+          "candidate_distances": [
+            0.3153,
+            0.3202,
+            0.3309,
+            0.331,
+            0.3383,
+            0.3554,
+            0.3619
+          ]
+        },
+        {
+          "question": "What is the title of this book?",
+          "answer": "Principles of Information Security, 4th ed. [document]",
+          "answerable": true,
+          "abstained": false,
+          "correct": true,
+          "retrieved_chunks": 5,
+          "considered_candidates": 8,
+          "best_distance": 0.33865100145339966,
+          "cut_distance": 0.43865100145339964,
+          "profile_used": true,
+          "passages_supplied": 5,
+          "candidates_returned": 8,
+          "profile_supplied": true,
+          "cited_document_only": true,
+          "candidate_distances": [
+            0.3387,
+            0.3635,
+            0.3668,
+            0.3679,
+            0.3704,
+            0.3727,
+            0.3764,
+            0.3817
+          ]
+        },
+        {
+          "question": "What is the capital of Mongolia?",
+          "answer": "I couldn't find that information in the uploaded document.",
+          "answerable": false,
+          "abstained": true,
+          "correct": true,
+          "retrieved_chunks": 5,
+          "considered_candidates": 9,
+          "best_distance": 0.4649287462234497,
+          "cut_distance": 0.5649287462234497,
+          "profile_used": true,
+          "passages_supplied": 5,
+          "candidates_returned": 9,
+          "profile_supplied": true,
+          "cited_document_only": false,
+          "candidate_distances": [
+            0.4649,
+            0.4766,
+            0.478,
+            0.4796,
+            0.482,
+            0.4881,
+            0.4916,
+            0.4927,
+            0.4938
+          ]
+        }
+      ]
+    }
+  ]
+}
