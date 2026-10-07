@@ -181,50 +181,56 @@ The ablation above used **one** 658-page English textbook, and an absolute
 distance threshold tuned on it (0.60) shipped as a global default. On a
 different document it deleted every passage for broad questions: retrieval
 returned nothing, and the answer was generated from the document profile alone,
-cited entirely as `[document]`. A 33-question set anchored to specific pages
-could not observe that, because nearly every question it contained had a nearby
-page.
+cited entirely as `[document]`. A page-anchored question set could not observe
+that, because nearly every question it contained had a nearby page.
 
-`eval/run_shapes.py` ingests five documents with the shipped settings and fails
-loudly if any question is answered with an empty context:
+The two documents that exposed it are copyrighted and cannot be committed, so
+the committed corpus uses permissively licensed substitutes of the same shape
+(see [`backend/eval/documents/README.md`](../backend/eval/documents/README.md)):
+a long technical standard without bookmarks (RFC 9110) and a long book with one
+bookmark per chapter (*Moby Dick*). `eval/run_shapes.py` ingests five documents
+with the shipped settings and fails loudly if any question is answered with an
+empty context, or if a document is missing:
 
 | Document | Shape | Questions | Answered | Abstained correctly | Empty ctx rate | Profile-only rate | Fewest passages |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `sheet` | 2-page form, no bookmarks | 3 | 2/2 | 1/1 | 0.00 | 0.00 | 2 |
 | `table` | table of sensor readings | 3 | 2/2 | 1/1 | 0.00 | 0.00 | 2 |
 | `german` | 1-page German document | 2 | 1/1 | 1/1 | 0.00 | 0.00 | 2 |
-| `standard` | 157-page technical standard | 4 | 3/3 | 1/1 | 0.00 | 0.67 | 5 |
-| `book` | 658-page textbook | 4 | 3/3 | 1/1 | 0.00 | 0.33 | 5 |
+| `standard` | RFC 9110, no bookmarks | 4 | 2/3 | 1/1 | 0.00 | 0.67 | 5 |
+| `book` | *Moby Dick*, chapter bookmarks | 4 | 3/3 | 1/1 | 0.00 | 0.67 | 5 |
 
 Every row's empty-context rate is 0.00, which is the invariant this runner
-exists to enforce. The profile-only rates are **not** zero and are not meant to
-be: a metadata question is supposed to be answered from the profile and cites
-`[document]` by design, and on the standard the aggregate question is answered
-from the profile outline for the same reason. Empty-context rate is the clean
-regression signal; profile-only rate is read beside it.
+exists to enforce, and **no question was ever answered with an empty context**.
+The profile-only rates are **not** zero and are not meant to be: a metadata
+question is supposed to be answered from the profile and cites `[document]` by
+design. Empty-context rate is the clean regression signal; profile-only rate is
+read beside it.
 
-Sixteen of sixteen questions behaved correctly and **no question was ever
-answered with an empty context**, including the questions that used to fail:
+Fourteen of sixteen questions behaved correctly — ten of eleven answerable ones,
+and all four unanswerable ones abstained correctly. The questions that used to
+fail now reach the model:
 
 | Question | Document | Passages | Best distance |
 | --- | --- | --- | --- |
-| "What is this document about?" | standard | 5 | 0.349 |
-| "What is the title of this document?" | standard | 5 | 0.346 |
-| "List the sections of this document." | standard | 5 | 0.331 |
-| "What is this book about?" | book | 5 | 0.331 |
-| "List the chapters of this book." | book | 5 | 0.315 |
-| "What was the temperature on 3 March 2024?" | table | 2 | 0.278 |
-| "Wie oft erfolgt die Wartung der Heizungsanlage?" | german | 2 | 0.274 |
+| "What is this document about?" | standard | 5 | 0.332 |
+| "What is the title of this document?" | standard | 5 | 0.343 |
+| "What is this book about?" | book | 5 | 0.346 |
+| "List the chapters of this book." | book | 5 | 0.295 |
+| "What was the temperature on 3 March 2024?" | table | 2 | 0.264 |
+| "Wie oft erfolgt die Wartung der Heizungsanlage?" | german | 2 | 0.251 |
 
 Four things this demonstrates that the knob ablation could not:
 
-- **Broad questions reach the model.** "What is this document about?" and "list
-  the sections" are aggregate questions with no single source page. They are now
-  answered from the profile outline, which is built from the document's own
-  bookmarks and supplied with every question.
-- **Aggregate questions cannot be answered by a larger top-k.** No top-5 (or
-  top-50) of a 157-page standard contains its own table of contents, which is
-  why the outline is built at ingest rather than searched for.
+- **Broad questions reach the model.** "What is this document about?" is an
+  aggregate question with no single source page. On the book it is answered from
+  the profile outline, built from the document's own bookmarks; on the standard,
+  which has no bookmarks, the profile is a model read of the opening pages.
+- **An outline is not always available.** "List the sections of this document."
+  is the single miss: RFC 9110 has no bookmarks, so its profile is a model
+  summary of the opening pages and did not name the sections. A bookmarked
+  document answers the same question from its outline. This is the honest cost
+  of not paying for a model summary by default (`DOCUMENT_SUMMARY_ALWAYS=false`).
 - **A table cell is retrievable.** The sensor reading for a specific date
   survives extraction because line structure is preserved instead of being
   flattened into one line per page.
@@ -232,53 +238,60 @@ Four things this demonstrates that the knob ablation could not:
   from the German document, because abstention is detected by a language-neutral
   sentinel rather than by matching an English sentence.
 
-Distances are now **cosine** (identical text is 0.0, orthogonal is 1.0), set
-explicitly on the collection. The values above sit between 0.19 and 0.55. The
-same questions had best **L2** distances of 0.66–0.95, which is why the old
-absolute 0.60 cut deleted them; the next section reconstructs it.
+Distances are **cosine** (identical text is 0.0, orthogonal is 1.0), set
+explicitly on the collection; the values above sit between 0.19 and 0.55. The
+next section measures what the old absolute 0.60 cut did to the same questions
+in the L2 space it was tuned in.
 
 ## The regression, reproduced
 
 The plan asked for a "before" snapshot before the fix landed. It was not taken,
 so `eval/reproduce_regression.py` reconstructs the pre-fix state — **L2 space,
-absolute 0.60, no fallback** — and runs three arms over the same two documents.
-The reconstruction is an explicit subclass, not a reverted release, and it
-separates the two changes that shipped together, the vector space and the
+absolute 0.60, no fallback** — and runs three arms over the same two committed
+documents. The reconstruction is an explicit subclass, not a reverted release,
+and it separates the two changes that shipped together, the vector space and the
 selection rule:
 
 | Document | Arm | Space | Correct | Empty context rate | Profile-only rate |
 | --- | --- | --- | --- | --- | --- |
-| `standard` (157 pp) | **before:** absolute 0.60, no fallback | L2 | 3/6 | **0.67** | 0.67 |
-| `standard` | *middle:* absolute 0.60, no fallback | cosine | 5/6 | 0.00 | 0.20 |
-| `standard` | **after:** relative selection | cosine | 5/6 | **0.00** | 0.40 |
-| `book` (658 pp) | **before:** absolute 0.60, no fallback | L2 | 3/4 | **1.00** | 1.00 |
-| `book` | *middle:* absolute 0.60, no fallback | cosine | 4/4 | 0.00 | 0.33 |
-| `book` | **after:** relative selection | cosine | 4/4 | **0.00** | 0.33 |
+| `standard` (RFC 9110) | **before:** absolute 0.60, no fallback | L2 | 4/5 | **0.67** | 0.67 |
+| `standard` | *middle:* absolute 0.60, no fallback | cosine | 4/5 | 0.00 | 0.50 |
+| `standard` | **after:** relative selection | cosine | 3/5 | **0.00** | 0.33 |
+| `book` (*Moby Dick*) | **before:** absolute 0.60, no fallback | L2 | 3/4 | **0.50** | 1.00 |
+| `book` | *middle:* absolute 0.60, no fallback | cosine | 3/4 | 0.00 | 1.00 |
+| `book` | **after:** relative selection | cosine | 3/4 | **0.00** | 1.00 |
+
+**Correct is not the signal here and must not be read as one.** It is a single
+pass over four or five keyword-scored questions, so it moves by a whole question
+between runs; the standard's after arm scoring 3/5 against the before arm's 4/5
+is exactly that noise, not evidence that grounding answers in real passages
+hurts. The property this section measures is the empty-context rate.
 
 The before arm's own warnings pin the mechanism to the distance. On the
-standard, "what is this document about?" returned **9 candidates with a best L2
-distance of 0.699** — none within 0.60 — so all nine were discarded and the
-pipeline answered from the profile. The same happened on the book, where every
-answered question had zero passages.
+standard, "what is this document about?" returned **8 candidates with a best L2
+distance of 0.615** — every one above 0.60 — so all eight were discarded and the
+pipeline answered from the profile. The book behaved the same way (best L2
+distances 0.67–0.91).
 
 Three things this shows:
 
 - **The shipped configuration answered from the profile, not the document.**
-  With L2 distances of 0.66–0.95 and a 0.60 cut, the book's empty-context rate
-  was **1.00**: no answered question received a single passage. On the standard
-  it was 0.67. The old ablation could not see this — the column did not exist,
-  and its questions were anchored to pages that do have a nearby match.
+  With L2 distances above the 0.60 cut, two-thirds of the standard's answered
+  questions and half of the book's received no passage at all. The old ablation
+  could not see this — the column did not exist, and its questions were anchored
+  to pages that do have a nearby match.
 - **The space change alone is not the lesson.** Cosine distances are smaller, so
-  in the middle arm the same absolute 0.60 happens to pass these two documents
+  in the middle arm the same absolute 0.60 happens to pass these documents
   (empty rate 0.00). That is luck of scale, not safety: a fixed value still
   cannot know whether it is right for a document it has not seen. The relative
   rule plus the never-empty invariant are what make the outcome hold rather than
   happen — and if the filter still empties, the best passages are sent anyway
   with a warning.
 - **Profile-only rate is not meant to reach zero.** A metadata question is
-  *supposed* to be answered from the profile and cites `[document]`; that is why
-  the after arm sits at 0.40 and 0.33 rather than 0. Empty-context rate is the
-  clean signal, and profile-only rate is read beside it, not instead of it.
+  *supposed* to be answered from the profile and cites `[document]`; the book's
+  title and chapter questions do exactly that, which is why its rate is 1.00
+  with two answered questions. Empty-context rate is the clean signal, and
+  profile-only rate is read beside it, not instead of it.
 
 The reproduction is committed as `results-regression.json`, and
 `eval/run_shapes.py` is the code path that now fails loudly if empty-context
@@ -365,6 +378,24 @@ python -m eval.run_shapes                         # across document shapes
 python -m eval.reproduce_regression               # before/after, both documents
 python -m eval.diagnose --questions               # per-question retrieval detail
 ```
+
+The shape and regression runs ingest only the committed documents in
+`backend/eval/documents/` (permissively licensed substitutes), so they reproduce
+on a fresh clone. To evaluate against documents that cannot be committed, point
+the tools at them explicitly:
+
+```bash
+cp backend/eval/shapes.local.jsonl.example backend/eval/shapes.local.jsonl
+python -m eval.run_shapes --local shapes.local.jsonl           # from backend/
+python -m eval.reproduce_regression --document book=/path/to/textbook.pdf
+```
+
+`run_shapes` and `reproduce_regression` exit non-zero if a document is missing,
+so a partial run cannot pass as a full one (pass `--allow-missing` to accept one
+deliberately). The ablation question set (`questions.jsonl`) is anchored to the
+original textbook's page numbers; run it with `--document` pointing at that
+document to reproduce the published ablation, otherwise the harness warns that
+hit@5 is not meaningful.
 
 The harness runs the real providers, so it costs money and needs both API
 keys. It is deliberately not part of the offline test suite; `pytest` remains

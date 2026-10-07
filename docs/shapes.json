@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "kind": "shapes",
-  "generated_at": "2026-10-06T19:39:37.262700+00:00",
-  "revision": "8aac633",
+  "generated_at": "2026-10-07T00:09:25.153630+00:00",
+  "revision": "c25ba3b",
   "documents": [
     "sheet",
     "table",
@@ -10,6 +10,9 @@
     "standard",
     "book"
   ],
+  "shapes_ran": 5,
+  "shapes_total": 5,
+  "missing": [],
   "limits": {
     "max_pages_per_document": 2000,
     "max_chunks_per_document": 20000,
@@ -31,7 +34,7 @@
       "results": [
         {
           "question": "How often must the site induction be renewed?",
-          "answer": "Every 12 months [p.1].",
+          "answer": "Every 12 months. [p.1]",
           "answerable": true,
           "abstained": false,
           "correct": true,
@@ -46,12 +49,12 @@
           "cited_document_only": false,
           "candidate_distances": [
             0.1869,
-            0.2429
+            0.2551
           ]
         },
         {
           "question": "Who is the site manager?",
-          "answer": "The site manager is D. Okonkwo. [p.1]",
+          "answer": "D. Okonkwo [p.1]",
           "answerable": true,
           "abstained": false,
           "correct": true,
@@ -66,7 +69,7 @@
           "cited_document_only": false,
           "candidate_distances": [
             0.3005,
-            0.3565
+            0.3466
           ]
         },
         {
@@ -86,7 +89,7 @@
           "cited_document_only": false,
           "candidate_distances": [
             0.4867,
-            0.5448
+            0.5405
           ]
         }
       ]
@@ -104,21 +107,21 @@
           "correct": true,
           "retrieved_chunks": 2,
           "considered_candidates": 2,
-          "best_distance": 0.27833032608032227,
-          "cut_distance": 0.37833032608032224,
+          "best_distance": 0.2642860412597656,
+          "cut_distance": 0.3642860412597656,
           "profile_used": true,
           "passages_supplied": 2,
           "candidates_returned": 2,
           "profile_supplied": true,
           "cited_document_only": false,
           "candidate_distances": [
-            0.2783,
-            0.3434
+            0.2643,
+            0.3271
           ]
         },
         {
           "question": "Which sensor was installed on 5 March 2024?",
-          "answer": "Sensor N-02 was installed on 5 March 2024. [p.1]",
+          "answer": "Sensor N-02 was installed on 5 March 2024 [p.1].",
           "answerable": true,
           "abstained": false,
           "correct": true,
@@ -133,7 +136,7 @@
           "cited_document_only": false,
           "candidate_distances": [
             0.2071,
-            0.2677
+            0.2374
           ]
         },
         {
@@ -153,7 +156,7 @@
           "cited_document_only": false,
           "candidate_distances": [
             0.5015,
-            0.5413
+            0.525
           ]
         }
       ]
@@ -165,22 +168,22 @@
       "results": [
         {
           "question": "Wie oft erfolgt die Wartung der Heizungsanlage?",
-          "answer": "Die Wartung erfolgt alle sechs Monate durch einen Techniker. [p.1]",
+          "answer": "Die Wartung erfolgt alle sechs Monate durch einen Techniker [p.1].",
           "answerable": true,
           "abstained": false,
           "correct": true,
           "retrieved_chunks": 2,
           "considered_candidates": 2,
-          "best_distance": 0.2742392420768738,
-          "cut_distance": 0.37423924207687376,
+          "best_distance": 0.2510201930999756,
+          "cut_distance": 0.35102019309997556,
           "profile_used": true,
           "passages_supplied": 2,
           "candidates_returned": 2,
           "profile_supplied": true,
           "cited_document_only": false,
           "candidate_distances": [
-            0.2742,
-            0.3368
+            0.251,
+            0.322
           ]
         },
         {
@@ -200,93 +203,92 @@
           "cited_document_only": false,
           "candidate_distances": [
             0.5465,
-            0.6297
+            0.6261
           ]
         }
       ]
     },
     {
       "name": "standard",
-      "description": "157-page technical standard",
+      "description": "long technical standard, no bookmarks",
       "skipped": false,
       "results": [
         {
           "question": "What is this document about?",
-          "answer": "This document is a CEDIA/CTA recommended practice (CEDIA/CTA-RP22) that provides guidance for the design and specification of audio reproduction within private entertainment spaces, aiming to deliver optimal performance for the equipment and space and to render content as close as possible to the intent of the content creator [p.3][p.12]. It outlines audio design and engineering parameters, and defines performance objectives, levels, and related parameters such as spatiality, dynamics, and timbre [p.12][p.42].",
+          "answer": "This document is RFC 9110: HTTP Semantics, authored by R. Fielding, Ed.; M. Nottingham, Ed.; and J. Reschke, Ed., and published by the Internet Engineering Task Force (IETF) in June 2022. It describes the overall architecture of HTTP, establishes common terminology, and defines protocol aspects shared by all versions, including core protocol elements, extensibility mechanisms, and the \"http\" and \"https\" URI schemes. [document]",
           "answerable": true,
           "abstained": false,
           "correct": true,
           "retrieved_chunks": 5,
-          "considered_candidates": 9,
-          "best_distance": 0.3494846820831299,
-          "cut_distance": 0.44948468208312986,
+          "considered_candidates": 8,
+          "best_distance": 0.3316928744316101,
+          "cut_distance": 0.4316928744316101,
           "profile_used": true,
           "passages_supplied": 5,
-          "candidates_returned": 9,
+          "candidates_returned": 8,
           "profile_supplied": true,
-          "cited_document_only": false,
+          "cited_document_only": true,
           "candidate_distances": [
-            0.3495,
-            0.3516,
+            0.3317,
+            0.3423,
+            0.3457,
             0.358,
-            0.3707,
-            0.3733,
-            0.4374,
-            0.4423,
-            0.4425,
-            0.4453
+            0.3592,
+            0.4141,
+            0.4143,
+            0.4178
           ]
         },
         {
           "question": "What is the title of this document?",
-          "answer": "The title of this document is \"CEDIA/CTA-RP22 Immersive Audio Design Recommended Practice.\" [document]",
+          "answer": "The title of this document is \"RFC 9110: HTTP Semantics\" [document].",
           "answerable": true,
           "abstained": false,
           "correct": true,
           "retrieved_chunks": 5,
           "considered_candidates": 9,
-          "best_distance": 0.3459441661834717,
-          "cut_distance": 0.44594416618347166,
+          "best_distance": 0.3431444764137268,
+          "cut_distance": 0.4431444764137268,
           "profile_used": true,
           "passages_supplied": 5,
           "candidates_returned": 9,
           "profile_supplied": true,
           "cited_document_only": true,
           "candidate_distances": [
-            0.3459,
-            0.3571,
-            0.358,
-            0.361,
-            0.3638,
-            0.3752,
-            0.3754,
-            0.3757,
-            0.3764
+            0.3431,
+            0.3446,
+            0.3666,
+            0.3702,
+            0.3755,
+            0.3845,
+            0.3982,
+            0.4001,
+            0.4007
           ]
         },
         {
           "question": "List the sections of this document.",
-          "answer": "The document's sections are: Foreword; Intellectual Property; Contents; Visual Table of Contents / Flowchart; i. Introduction; ii. Scope; iii. Contributors; iv. References (with Normative References, Informative References, References Acquisition); v. Compliance Notation; vi. Unit Conversions; Section 1: GLOSSARY (1.1 Definitions, 1.2 Symbols and Abbreviations); Section 2: IMMERSIVE AUDIO OVERVIEW (2.1 Describing Immersive Audio Systems, 2.2 Channel-based vs Object-based Audio, with subsections 2.2.1\u20132.2.4); Section 3: AUDIO PERFORMANCE OBJECTIVES AND LEVELS (3.1 Performance Objectives for Audio with subsections 3.1.1\u20133.1.9, 3.2 Immersive Audio Performance Levels with 3.2.1 Individual Seating Posit) [document].",
+          "answer": "The material lists the following sections (table of contents entries):  - 10.2.1. Allow; 10.2.2. Location; 10.2.3. Retry-After; 10.2.4. Server [p.4] - 11. HTTP Authentication; 11.1. Authentication Scheme; 11.2. Authentication Parameters; 11.3. Challenge and Response; 11.4. Credentials; 11.5. Establishing a Protection Space (Realm); 11.6. Authenticating Users to Origin Servers; 11.6.1. WWW-Authenticate; 11.6.2. Authorization; 11.6.3. Authentication-Info; 11.7. Authenticating Clients to Proxies; 11.7.1. Proxy-Authenticate; 11.7.2. Proxy-Authorization; 11.7.3. Proxy-Authentication-Info [p.4] - 12. Content Negotiation; 12.1. Proactive Negotiation; 12.2. Reactive Negotiation; 12.3. Request Content Negotiation; 12.4. Content Negotiation Field Features; 12.4.1. Absence; 12.4.2. Quality Values; 12.4.3. Wildcard Values; 12.5. Content Negotiation Fields; 12.5.1. Accept; 12.5.2. Accept-Charset; 12.5.3. Accept-Encoding; 12.5.4. Accept-Language; 12.5.5. Vary; 13. Conditional Requests; 13.1. Preconditions; 13.1.1. If-Match; 13.1.2. If-None-Match; 13.1.3. If-Modified-Since; 13.1.4. If-Unmodified-Since; 13.1.5. If-Range; 13.2. Evaluation of Preconditions; 13.2.1. When to Evaluate; 13.2.2. Precedence of Preconditions; 14. Range Requests; 14.1. Range Units; 14.1.1. Range Specifiers; 14.1.2. Byte Ranges; 14.2. Range; 14.3. Accept-Ranges; 14.4. Content-Range; 14.5. Partial PUT; 14.6. Media Type multipart/byteranges; 15. Status Codes; 15.1. Overview of Status Codes; 15.2. Informational 1xx; 15.2.1. 100 Continue; 15.2.2. 101 Switching Protocols; 15.3. Successful 2xx; 15.3.1. 200 OK; 15.3.2. 201 Created; 15.3.3. 202 Accepted [p.5] - 15.3.4. 203 Non-Authoritative Information; 15.3.5. 204 No Content; 15.3.6. 205 Reset Content; 15.3.7. 206 Partial Content; 15.3.7.1. Single Part; 15.3.7.2. Multiple Parts; 15.3.7.3. Combining Parts; 15.4. Redirection 3xx; 15.4.1. 300 Multiple Choices; 15.4.2. 301 Moved Permanently; 15.4.3. 302 Found; 15.4.4. 303 See Other; 15.4.5. 304 Not Modified; 15.4.6. 305 Use Proxy; 15.4.7. 306 (Unused) [p.5]",
           "answerable": true,
           "abstained": false,
-          "correct": true,
+          "correct": false,
           "retrieved_chunks": 5,
           "considered_candidates": 7,
-          "best_distance": 0.33068060874938965,
-          "cut_distance": 0.4306806087493896,
+          "best_distance": 0.30278706550598145,
+          "cut_distance": 0.4027870655059814,
           "profile_used": true,
           "passages_supplied": 5,
           "candidates_returned": 7,
           "profile_supplied": true,
-          "cited_document_only": true,
+          "cited_document_only": false,
           "candidate_distances": [
-            0.3307,
-            0.3409,
-            0.3671,
-            0.3702,
-            0.3709,
-            0.371,
-            0.3785
+            0.3028,
+            0.3089,
+            0.3132,
+            0.3165,
+            0.3186,
+            0.3353,
+            0.3652
           ]
         },
         {
@@ -296,106 +298,109 @@
           "abstained": true,
           "correct": true,
           "retrieved_chunks": 5,
-          "considered_candidates": 8,
-          "best_distance": 0.47377413511276245,
-          "cut_distance": 0.5737741351127624,
+          "considered_candidates": 9,
+          "best_distance": 0.4650994539260864,
+          "cut_distance": 0.5650994539260864,
           "profile_used": true,
           "passages_supplied": 5,
-          "candidates_returned": 8,
+          "candidates_returned": 9,
           "profile_supplied": true,
           "cited_document_only": false,
           "candidate_distances": [
-            0.4738,
-            0.482,
-            0.4845,
-            0.4885,
-            0.4903,
-            0.5194,
-            0.5207,
-            0.5215
+            0.4651,
+            0.4703,
+            0.4748,
+            0.4761,
+            0.4764,
+            0.521,
+            0.5347,
+            0.5355,
+            0.538
           ]
         }
       ]
     },
     {
       "name": "book",
-      "description": "658-page textbook",
+      "description": "long book with chapter bookmarks",
       "skipped": false,
       "results": [
         {
           "question": "What is this book about?",
-          "answer": "This book, *Principles of Information Security, Fourth Edition*, provides a broad review of the entire field of information security, including the terminology of the field, the history of the discipline, and strategies for managing an information security program [p.22]. It is structured to follow the security systems development life cycle (SecSDLC) methodology [p.22]. Its essential tenet is that information security in the modern organization is a problem for management to solve, not one that technology alone can address [p.22].",
+          "answer": "The provided material contains only the opening of *Moby Dick* (Chapter 1, \"Loomings,\" where Ishmael describes going to sea) and a passage about porpoises as a type of whale, along with Project Gutenberg information [p.1][p.97]. The document profile lists chapter titles for *Moby Dick; Or, The Whale* by Herman Melville [document]. Beyond these fragments, the material does not contain a summary of the book's overall subject.",
           "answerable": true,
           "abstained": false,
           "correct": true,
           "retrieved_chunks": 5,
-          "considered_candidates": 7,
-          "best_distance": 0.3307400345802307,
-          "cut_distance": 0.4307400345802307,
+          "considered_candidates": 9,
+          "best_distance": 0.34578007459640503,
+          "cut_distance": 0.445780074596405,
           "profile_used": true,
           "passages_supplied": 5,
-          "candidates_returned": 7,
+          "candidates_returned": 9,
           "profile_supplied": true,
           "cited_document_only": false,
           "candidate_distances": [
-            0.3307,
-            0.3444,
-            0.3487,
-            0.3555,
-            0.3641,
-            0.3938,
-            0.3943
+            0.3458,
+            0.3543,
+            0.3642,
+            0.3724,
+            0.3726,
+            0.3812,
+            0.386,
+            0.3875,
+            0.3912
           ]
         },
         {
           "question": "List the chapters of this book.",
-          "answer": "\u6839\u636e\u63d0\u4f9b\u7684\u6750\u6599\uff0c\u672c\u4e66\u7684\u7ae0\u8282\u5982\u4e0b\uff1a  - \u7b2c1\u7ae0\uff1aIntroduction to Information Security [p.9] - \u7b2c2\u7ae0\uff1aThe Need for Security [p.9] - \u7b2c3\u7ae0\uff1aLegal, Ethical, and Professional Issues in Information Security [p.9] - \u7b2c4\u7ae0\uff1aRisk Management [p.9] - \u7b2c5\u7ae0\uff1aPlanning for Security [p.9] - \u7b2c6\u7ae0\uff1aSecurity Technology: Firewalls and VPNs [p.9] - \u7b2c7\u7ae0\uff1aSecurity Technology: Intrusion Detection and Prevention Systems, and Other Security Tools [p.9] - \u7b2c8\u7ae0\uff1aCryptography [p.9] - \u7b2c9\u7ae0\uff1aPhysical Security [p.9] - \u7b2c10\u7ae0\uff1aImplementing Information Security [p.9] - \u7b2c11\u7ae0\uff1aSecurity and Personnel [p.9] - \u7b2c12\u7ae0\uff1aInformation Security Maintenance [p.9]",
+          "answer": "The document profile lists the following sections: CHAPTER 1. Loomings.; CHAPTER 2. The Carpet-Bag.; CHAPTER 3. The Spouter-Inn.; CHAPTER 4. The Counterpane.; CHAPTER 5. Breakfast.; CHAPTER 6. The Street.; CHAPTER 7. The Chapel.; CHAPTER 8. The Pulpit.; CHAPTER 9. The Sermon.; CHAPTER 10. A Bosom Friend.; CHAPTER 11. Nightgown.; CHAPTER 12. Biographical.; CHAPTER 13. Wheelbarrow.; CHAPTER 14. Nantucket.; CHAPTER 15. Chowder.; CHAPTER 16. The Ship.; CHAPTER 17. The Ramadan.; CHAPTER 18. His Mark.; CHAPTER 19. The Prophet.; CHAPTER 20. All Astir.; CHAPTER 21. Going Aboard.; CHAPTER 22. Merry Christmas.; CHAPTER 23. The Lee Shore.; CHAPTER 24. The Advocate.; CHAPTER 25. Postscript.; CHAPTER 26. Knights and Squires.; CHAPTER 27. Knights and Squires.; CHAPTER 28. Ahab.; CHAPTER 29. Enter Ahab; to Him, Stubb.; CHAPTER 30. The Pipe.; CHAPTER 31. Queen Mab.; CHAPTER 32. Cetology.; CHAPTER 33. The Specksnyder.; CHAPTER 34. The Cabin-Table.; CHAPTER 35. The Mast-Head.; CHAPTER 36. The Quarter-Deck.; CHAPTER 37. Sunset.; CHAPTER 38. Dusk.; CHAPTER 39. First Night-Watch.; CHAPTER 40. Midnight, Forecastle.; CHAPTER 41. Moby Dick.; CHAPTE [document]",
           "answerable": true,
           "abstained": false,
           "correct": true,
           "retrieved_chunks": 5,
           "considered_candidates": 7,
-          "best_distance": 0.3152692914009094,
-          "cut_distance": 0.4152692914009094,
+          "best_distance": 0.2948899269104004,
+          "cut_distance": 0.39488992691040037,
           "profile_used": true,
           "passages_supplied": 5,
           "candidates_returned": 7,
           "profile_supplied": true,
-          "cited_document_only": false,
+          "cited_document_only": true,
           "candidate_distances": [
-            0.3153,
-            0.3202,
-            0.3309,
-            0.331,
-            0.3383,
-            0.3554,
-            0.3619
+            0.2949,
+            0.3338,
+            0.3472,
+            0.3472,
+            0.3516,
+            0.3603,
+            0.3615
           ]
         },
         {
           "question": "What is the title of this book?",
-          "answer": "Principles of Information Security, 4th ed. [document]",
+          "answer": "The title of this book is *Moby Dick; Or, The Whale* [document].",
           "answerable": true,
           "abstained": false,
           "correct": true,
           "retrieved_chunks": 5,
           "considered_candidates": 8,
-          "best_distance": 0.33865100145339966,
-          "cut_distance": 0.43865100145339964,
+          "best_distance": 0.3363074064254761,
+          "cut_distance": 0.43630740642547605,
           "profile_used": true,
           "passages_supplied": 5,
           "candidates_returned": 8,
           "profile_supplied": true,
           "cited_document_only": true,
           "candidate_distances": [
-            0.3387,
-            0.3635,
-            0.3668,
-            0.3679,
-            0.3704,
-            0.3727,
-            0.3764,
-            0.3817
+            0.3363,
+            0.3384,
+            0.3643,
+            0.3648,
+            0.3666,
+            0.3669,
+            0.3675,
+            0.3732
           ]
         },
         {
@@ -405,24 +410,23 @@
           "abstained": true,
           "correct": true,
           "retrieved_chunks": 5,
-          "considered_candidates": 9,
-          "best_distance": 0.4649287462234497,
-          "cut_distance": 0.5649287462234497,
+          "considered_candidates": 8,
+          "best_distance": 0.45357853174209595,
+          "cut_distance": 0.5535785317420959,
           "profile_used": true,
           "passages_supplied": 5,
-          "candidates_returned": 9,
+          "candidates_returned": 8,
           "profile_supplied": true,
           "cited_document_only": false,
           "candidate_distances": [
-            0.4649,
-            0.4766,
-            0.478,
-            0.4796,
-            0.482,
-            0.4881,
-            0.4916,
-            0.4927,
-            0.4938
+            0.4536,
+            0.4549,
+            0.459,
+            0.4608,
+            0.4617,
+            0.4672,
+            0.4703,
+            0.4707
           ]
         }
       ]
