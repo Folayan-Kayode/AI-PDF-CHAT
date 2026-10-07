@@ -1,0 +1,9 @@
+# Build context exclusions for the frontend image.
+
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+.venv
+venv
+tests/

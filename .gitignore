@@ -34,3 +34,7 @@ chroma_db/
 .cache/
 
 .DS_Store
+
+# Local-only evaluation overlay; may point at copyrighted documents that must
+# not be committed. See backend/eval/shapes.local.jsonl.example.
+backend/eval/shapes.local.jsonl

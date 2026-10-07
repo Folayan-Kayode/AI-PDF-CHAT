@@ -58,7 +58,8 @@ def _env_bool(name: str, default: bool) -> bool:
 class Settings:
     PROJECT_NAME = "AI PDF Chat"
 
-    API_VERSION = "1.0.0"
+    # Pre-release: the deployment commit is tagged v1.0.0 once it is live.
+    API_VERSION = _env("API_VERSION", "0.9.0")
 
     # ---------------- Generation: DeepSeek (OpenAI-compatible API) ---------
     MODEL_NAME = _env("MODEL", "deepseek-chat")
@@ -112,6 +113,43 @@ class Settings:
         "EMBEDDING_REQUESTS_PER_MINUTE",
         90,
     )
+
+    # ---------------- Security -------------------------------------------
+    # /upload and /chat spend provider money, so they must not be reachable
+    # without a credential. API_KEY is required in __init__ via _require(),
+    # which fails closed at startup instead of defaulting to open. /health,
+    # /ready and / stay open so a platform health check needs no secret.
+    #
+    # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+    # Only used if a browser client calls the API directly. The shipped
+    # Streamlit topology is server-to-server, so this defaults to empty and
+    # no CORS middleware is added.
+    CORS_ORIGINS = _env("CORS_ORIGINS", "")
+
+    # In-process token buckets, keyed by API key. 0 disables a limit.
+    # Uploads are bounded by volume (a concurrent one is already a 409, not a
+    # rate-limit), chats by request count.
+    UPLOAD_RATE_LIMIT_PER_HOUR = _env_int("UPLOAD_RATE_LIMIT_PER_HOUR", 10)
+
+    CHAT_RATE_LIMIT_PER_HOUR = _env_int("CHAT_RATE_LIMIT_PER_HOUR", 120)
+
+    # Ingestion is the expensive path. This is a daily ceiling on embedding
+    # *batches* (not chunks), checked before embedding starts, so a single
+    # caller cannot run up an unbounded bill. 0 disables the ceiling.
+    INGEST_DAILY_EMBEDDING_BATCH_BUDGET = _env_int(
+        "INGEST_DAILY_EMBEDDING_BATCH_BUDGET",
+        2000,
+    )
+
+    # ---------------- Runtime topology -----------------------------------
+    # Embedded Chroma plus a process-wide ingestion lock means exactly one
+    # worker. Managed platforms set WEB_CONCURRENCY for you, so the app refuses
+    # to start when it is >1 unless MULTI_WORKER_ACK says the operator has
+    # moved Chroma to server mode (or otherwise accepted the risk).
+    WEB_CONCURRENCY = _env_int("WEB_CONCURRENCY", 1)
+
+    MULTI_WORKER_ACK = _env_bool("MULTI_WORKER_ACK", False)
 
     # ---------------- Storage --------------------------------------------
     UPLOAD_DIRECTORY = _env("UPLOAD_DIRECTORY", "uploads")
@@ -249,6 +287,15 @@ class Settings:
         self.GOOGLE_API_KEY = self._require("GOOGLE_API_KEY")
 
         self.DEEPSEEK_API_KEY = self._require("DEEPSEEK_API_KEY")
+
+        # Required for the same reason as the provider keys: an unset value
+        # must stop the app, not silently leave the paid endpoints open.
+        self.API_KEY = self._require("API_KEY")
+
+    @property
+    def CORS_ORIGIN_LIST(self) -> list[str]:
+        """Parsed allowlist; empty means no CORS middleware is added."""
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     @property
     def EMBEDDING_MIN_DELAY_SECONDS(self) -> float:

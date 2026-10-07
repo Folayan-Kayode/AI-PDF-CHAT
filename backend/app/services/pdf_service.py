@@ -2,13 +2,16 @@
 
 import hashlib
 import logging
+import math
 import threading
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
 from app.core.exceptions import (
     DocumentTooLargeError,
+    IngestBudgetExceededError,
     IngestionInProgressError,
     PDFProcessingError,
     RetrievalError,
@@ -28,6 +31,27 @@ logger = logging.getLogger(__name__)
 # guard is process-wide: the application assumes a single uvicorn worker
 # (see README).
 _INGESTION_LOCK = threading.Lock()
+
+#: The registry metric the daily ingest budget is spent against.
+_EMBEDDING_BATCH_METRIC = "embedding_batches"
+
+
+def _utc_day(now: datetime | None = None) -> str:
+    return (now or datetime.now(UTC)).strftime("%Y-%m-%d")
+
+
+def _seconds_until_utc_midnight(now: datetime | None = None) -> float:
+    """Seconds until the daily budget window resets."""
+    now = now or datetime.now(UTC)
+
+    tomorrow = (now + timedelta(days=1)).replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+    return max(1.0, (tomorrow - now).total_seconds())
 
 
 def _profile_chunk(profile: str) -> dict[str, Any]:
@@ -72,6 +96,48 @@ class PDFService:
                 digest.update(block)
 
         return digest.hexdigest()
+
+    @staticmethod
+    def _enforce_ingest_budget(batches: int) -> None:
+        """
+        Refuse an ingest that would exceed the daily embedding budget.
+
+        Checked before embedding starts, so the caller gets a clear 429 rather
+        than a provider error part-way through a long ingest. A budget of 0
+        disables the ceiling.
+        """
+        budget = settings.INGEST_DAILY_EMBEDDING_BATCH_BUDGET
+
+        if budget <= 0:
+            return
+
+        try:
+            used = get_registry().usage(_utc_day(), _EMBEDDING_BATCH_METRIC)
+        except Exception:
+            # The budget is a guardrail, not the product: if it cannot be read,
+            # allow the ingest rather than break the feature.
+            logger.exception("could not read the ingest budget; allowing the ingest")
+
+            return
+
+        if used + batches > budget:
+            raise IngestBudgetExceededError(
+                f"Daily embedding budget reached ({used}/{budget} batches used). "
+                "Try again after 00:00 UTC, or raise "
+                "INGEST_DAILY_EMBEDDING_BATCH_BUDGET.",
+                _seconds_until_utc_midnight(),
+            )
+
+    @staticmethod
+    def _charge_ingest_budget(batches: int) -> None:
+        """Record embedding batches against today's budget after they succeed."""
+        if settings.INGEST_DAILY_EMBEDDING_BATCH_BUDGET <= 0:
+            return
+
+        try:
+            get_registry().add_usage(_utc_day(), _EMBEDDING_BATCH_METRIC, batches)
+        except Exception:
+            logger.exception("could not record the ingest budget usage")
 
     @classmethod
     def process(
@@ -172,7 +238,23 @@ class PDFService:
             for chunk in chunks
         ]
 
+        batches = math.ceil(len(texts) / max(1, settings.EMBEDDING_BATCH_SIZE))
+
+        # Show the commitment before it is made: batching and model calls are
+        # the only real cost in this path.
+        logger.info(
+            "ingesting document_id=%s chunks=%s embedding_batches=%s daily_budget=%s",
+            document_id,
+            len(texts),
+            batches,
+            settings.INGEST_DAILY_EMBEDDING_BATCH_BUDGET or "unlimited",
+        )
+
+        cls._enforce_ingest_budget(batches)
+
         embeddings = embedding_model.embed_documents(texts)
+
+        cls._charge_ingest_budget(batches)
 
         try:
             database.replace_documents(

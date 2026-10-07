@@ -21,6 +21,7 @@ import argparse
 import hashlib
 import json
 import logging
+import os
 import subprocess
 import time
 from datetime import UTC, datetime
@@ -37,7 +38,14 @@ logging.basicConfig(level=logging.WARNING)
 
 QUESTIONS_PATH = Path(__file__).with_name("questions.jsonl")
 
-DEFAULT_DOCUMENT = Path(r"C:\Users\Davel\Documents\Python\Whitman.pdf")
+# The committed question set was authored against a copyrighted textbook that
+# is NOT committed (see eval/documents/README.md). Default to the committed
+# substitute so the harness runs (and imports) on a fresh clone; pass
+# --document or set EVAL_DOCUMENT to point at the real textbook, whose page
+# anchors questions.jsonl actually expects.
+DOCUMENTS_PATH = Path(__file__).with_name("documents")
+
+DEFAULT_DOCUMENT = Path(os.getenv("EVAL_DOCUMENT", str(DOCUMENTS_PATH / "book_mobydick.pdf")))
 
 
 # --------------------------------------------------------------------------
@@ -552,8 +560,22 @@ def main() -> None:
     if args.limit:
         questions = questions[: args.limit]
 
+    if not args.document.exists():
+        raise SystemExit(
+            f"document not found: {args.document}. Pass --document PATH (or set "
+            "EVAL_DOCUMENT) to a document that matches the committed question set."
+        )
+
     print(f"document  : {args.document}")
     print(f"questions : {len(questions)}")
+
+    if args.document.resolve() == DEFAULT_DOCUMENT.resolve():
+        print(
+            "note      : using the committed substitute document. The committed\n"
+            "            questions.jsonl page anchors belong to the original\n"
+            "            textbook, so hit@5 is not meaningful here; pass --document\n"
+            "            for a meaningful ablation."
+        )
 
     indexed: dict[str, int] = {}
     runs = []

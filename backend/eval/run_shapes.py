@@ -13,11 +13,21 @@ Usage, from backend/:
     python -m eval.run_shapes
     python -m eval.run_shapes --only standard
     python -m eval.run_shapes --out ../docs/shapes.json --markdown <path>
+    python -m eval.run_shapes --local shapes.local.jsonl     # optional overlay
+
+A shape whose document is missing is reported and, by default, makes the run
+exit non-zero: a quietly smaller run is how a reproducibility gap survives.
+Pass --allow-missing to accept a partial run deliberately.
+
+The committed shapes use permissively licensed documents (see
+documents/README.md). An optional gitignored overlay (--local) can point at
+documents that must not be committed.
 """
 
 import argparse
 import json
 import logging
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -53,6 +63,19 @@ def load_shapes(path: Path = SHAPES_PATH) -> list[dict[str, Any]]:
     return shapes
 
 
+def merge_shapes(
+    base: list[dict[str, Any]],
+    overlay: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Overlay shapes by name, so a local file can replace a committed one."""
+    merged = {shape["name"]: shape for shape in base}
+
+    for shape in overlay:
+        merged[shape["name"]] = shape
+
+    return list(merged.values())
+
+
 def run_shape(shape: dict[str, Any], chunk_size: int = 1000) -> dict[str, Any]:
     """Ingest one document shape and ask its questions."""
     print(f"\n=== {shape['name']} ({shape['description']}) ===", flush=True)
@@ -65,6 +88,7 @@ def run_shape(shape: dict[str, Any], chunk_size: int = 1000) -> dict[str, Any]:
             "description": shape["description"],
             "skipped": True,
             "reason": "document not present",
+            "path": str(shape["document"]),
             "results": [],
         }
 
@@ -199,17 +223,37 @@ def to_markdown(rows: list[dict[str, Any]]) -> str:
     return header + "\n".join(body) + "\n"
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate across document shapes.")
 
     parser.add_argument("--only", action="append", default=[])
     parser.add_argument("--shapes", type=Path, default=SHAPES_PATH)
+    parser.add_argument(
+        "--local",
+        type=Path,
+        default=None,
+        help=(
+            "Optional gitignored overlay of shapes (matched by name). Use it for "
+            "documents that must not be committed."
+        ),
+    )
+    parser.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help="Accept a run where some documents are absent instead of failing.",
+    )
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument("--markdown", type=Path, default=None)
 
     args = parser.parse_args()
 
     shapes = load_shapes(args.shapes)
+
+    if args.local:
+        if not args.local.exists():
+            parser.error(f"--local file not found: {args.local}")
+
+        shapes = merge_shapes(shapes, load_shapes(args.local))
 
     if args.only:
         shapes = [shape for shape in shapes if shape["name"] in args.only]
@@ -220,6 +264,13 @@ def main() -> None:
 
     print()
     print(to_markdown(rows))
+
+    skipped = [run for run in runs if run.get("skipped")]
+
+    print(f"{len(runs) - len(skipped)} of {len(runs)} shapes ran.", flush=True)
+
+    for run in skipped:
+        print(f"  MISSING: {run['name']} ({run.get('path')})", flush=True)
 
     violations = [row for row in rows if row["empty_context"] not in ("n/a", 0)]
 
@@ -239,6 +290,9 @@ def main() -> None:
                     "generated_at": datetime.now(UTC).isoformat(),
                     "revision": git_revision(),
                     "documents": [run["name"] for run in runs],
+                    "shapes_ran": len(runs) - len(skipped),
+                    "shapes_total": len(runs),
+                    "missing": [run["name"] for run in skipped],
                     "limits": run_limits(),
                     "runs": runs,
                 },
@@ -253,6 +307,20 @@ def main() -> None:
         args.markdown.write_text(to_markdown(rows), encoding="utf-8")
         print(f"wrote {args.markdown}")
 
+    if skipped and not args.allow_missing:
+        print(
+            "Refusing to report a quietly smaller run. Provide the missing "
+            "documents, or pass --allow-missing to accept the partial run.",
+            flush=True,
+        )
+
+        return 1
+
+    if violations:
+        return 1
+
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

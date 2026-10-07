@@ -5,7 +5,7 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.api.chat import router as chat_router
@@ -14,9 +14,16 @@ from app.api.upload import router as upload_router
 from app.core.config import settings
 from app.core.exceptions import AppError
 from app.core.logging_config import configure_logging
+from app.core.ratelimit import chat_rate_limit, upload_rate_limit
 from app.core.request_context import request_id_var
+from app.core.runtime import assert_single_worker
+from app.core.security import require_api_key
 
 configure_logging(settings.LOG_LEVEL)
+
+# Fail fast on an unsupported topology (more than one worker) before the app
+# starts serving, rather than corrupting the index quietly later.
+assert_single_worker()
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +37,20 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.API_VERSION,
 )
+
+# CORS is only needed when a browser calls the API directly. The shipped
+# Streamlit topology is server-to-server, so the allowlist defaults to empty
+# and no middleware is added.
+if settings.CORS_ORIGIN_LIST:
+    from fastapi.middleware.cors import CORSMiddleware
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGIN_LIST,
+        allow_credentials=False,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "X-API-Key", "X-Request-ID"],
+    )
 
 
 @app.middleware("http")
@@ -106,8 +127,19 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 
 
 app.include_router(health_router)
-app.include_router(upload_router)
-app.include_router(chat_router)
+
+# The paid endpoints require the API key and are rate limited. /health, /ready
+# and / stay open: platform probes must not need a credential, and those routes
+# expose nothing sensitive.
+app.include_router(
+    upload_router,
+    dependencies=[Depends(require_api_key), Depends(upload_rate_limit)],
+)
+
+app.include_router(
+    chat_router,
+    dependencies=[Depends(require_api_key), Depends(chat_rate_limit)],
+)
 
 
 @app.get("/")

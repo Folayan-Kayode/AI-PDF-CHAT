@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from app.core.config import settings
+from app.core.runtime import worker_count
 from app.database.chroma import get_database
 from app.rag.embeddings import get_embedding_model
 from app.rag.retriever import Retriever
@@ -33,6 +34,7 @@ def health() -> dict[str, Any]:
         "version": settings.API_VERSION,
         "generation_model": settings.MODEL_NAME,
         "embedding_model": settings.EMBEDDING_MODEL,
+        "workers": worker_count(),
     }
 
 
@@ -71,6 +73,7 @@ def ready(deep: bool = False) -> dict[str, Any]:
     body: dict[str, Any] = {
         "status": "ready" if usable else "degraded",
         "indexed_chunks": indexed_chunks,
+        "registered_documents": _registered_document_count(),
         "documents": documents,
         **status,
         "generation_model": settings.MODEL_NAME,
@@ -82,6 +85,23 @@ def ready(deep: bool = False) -> dict[str, Any]:
         body["embedding_provider"] = _probe_embedding_provider()
 
     return body
+
+
+def _registered_document_count() -> int | None:
+    """
+    How many documents the registry remembers.
+
+    Reported alongside the index count so "the volume did not persist" is
+    distinguishable from "nothing was ever uploaded": if the registry has rows
+    but the index is empty, state was lost on restart.
+    """
+    try:
+        from app.database.registry import get_registry
+
+        return len(get_registry().list())
+    except Exception:
+        # The registry is a convenience; the index itself is authoritative.
+        return None
 
 
 def _document_summaries(database: Any) -> list[dict[str, Any]]:

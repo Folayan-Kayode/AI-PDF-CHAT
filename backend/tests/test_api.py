@@ -42,6 +42,17 @@ def test_health_is_a_cheap_liveness_check(client: TestClient):
     assert "indexed_chunks" not in body
 
 
+def test_health_reports_the_worker_count(client: TestClient):
+    # B4 made explicit: the app runs exactly one worker, and /health says so.
+    assert client.get("/health").json()["workers"] == 1
+
+
+def test_ready_reports_registered_documents(client: TestClient):
+    # B3: reported so "the volume did not persist" is distinguishable from
+    # "nothing was uploaded".
+    assert "registered_documents" in client.get("/ready").json()
+
+
 def test_ready_reports_a_degraded_empty_index(client: TestClient):
     response = client.get("/ready")
 

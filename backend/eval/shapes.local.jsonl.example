@@ -1,0 +1,13 @@
+# Optional local overlay for the shape evaluation.
+#
+# Copy to shapes.local.jsonl (gitignored) and edit the paths to evaluate
+# against documents that cannot be committed, such as the original CEDIA
+# standard and the Pearson/Cengage textbook the published ablation used:
+#
+#   cp shapes.local.jsonl.example shapes.local.jsonl
+#   python -m eval.run_shapes --local shapes.local.jsonl
+#
+# Shapes are matched by "name" and override the committed substitute of the
+# same name. Absolute paths are fine here because this file is never committed.
+{"name": "standard", "path": "C:\\path\\to\\cedia-standard.pdf", "description": "157-page technical standard (local)", "questions": [{"question": "What is this document about?", "expect": ["audio"]}, {"question": "What is the title of this document?", "expect": ["immersive audio"]}, {"question": "List the sections of this document.", "expect": ["introduction"]}, {"question": "What is the recipe for a chocolate cake?", "answerable": false}]}
+{"name": "book", "path": "C:\\path\\to\\textbook.pdf", "description": "658-page textbook (local)", "questions": [{"question": "What is this book about?", "expect": ["security"]}, {"question": "List the chapters of this book.", "expect": ["physical security"]}, {"question": "What is the title of this book?", "expect": ["principles of information security"]}, {"question": "What is the capital of Mongolia?", "answerable": false}]}

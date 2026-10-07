@@ -10,3 +10,7 @@ select = [
     "UP",  # pyupgrade
     "B",   # bugbear
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

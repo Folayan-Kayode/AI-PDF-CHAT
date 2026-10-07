@@ -28,6 +28,13 @@ CREATE TABLE IF NOT EXISTS documents (
     embedding_model TEXT,
     schema_version INTEGER,
     created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS usage (
+    day TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, metric)
 )
 """
 
@@ -48,7 +55,7 @@ class DocumentRegistry:
         self._connection.row_factory = sqlite3.Row
 
         with self._lock:
-            self._connection.execute(_SCHEMA)
+            self._connection.executescript(_SCHEMA)
             self._connection.commit()
 
     # ------------------------------------------------------------------
@@ -113,6 +120,36 @@ class DocumentRegistry:
                 (document_id,),
             )
             self._connection.commit()
+
+    # ------------------------------------------------------------------
+    # Usage (the ingest spend ceiling)
+    # ------------------------------------------------------------------
+
+    def usage(self, day: str, metric: str) -> int:
+        """Amount recorded for a metric on a UTC day (0 if none)."""
+        cursor = self._connection.execute(
+            "SELECT amount FROM usage WHERE day = ? AND metric = ?",
+            (day, metric),
+        )
+
+        row = cursor.fetchone()
+
+        return int(row["amount"]) if row else 0
+
+    def add_usage(self, day: str, metric: str, amount: int) -> int:
+        """Increment a metric and return the new total."""
+        with self._lock:
+            self._connection.execute(
+                """
+                INSERT INTO usage (day, metric, amount) VALUES (?, ?, ?)
+                ON CONFLICT(day, metric) DO UPDATE SET
+                    amount = usage.amount + excluded.amount
+                """,
+                (day, metric, amount),
+            )
+            self._connection.commit()
+
+        return self.usage(day, metric)
 
     # ------------------------------------------------------------------
     # Reads

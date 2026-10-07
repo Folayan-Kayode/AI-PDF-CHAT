@@ -81,3 +81,27 @@ def test_registry_survives_reopening(tmp_path):
     DocumentRegistry(path=path).record(**_record())
 
     assert DocumentRegistry(path=path).get("doc-a") is not None
+
+
+def test_usage_starts_at_zero_and_accumulates(registry):
+    assert registry.usage("2026-10-07", "embedding_batches") == 0
+
+    assert registry.add_usage("2026-10-07", "embedding_batches", 3) == 3
+    assert registry.add_usage("2026-10-07", "embedding_batches", 2) == 5
+
+    assert registry.usage("2026-10-07", "embedding_batches") == 5
+
+
+def test_usage_is_separate_per_day_and_metric(registry):
+    registry.add_usage("2026-10-07", "embedding_batches", 4)
+
+    assert registry.usage("2026-10-08", "embedding_batches") == 0
+    assert registry.usage("2026-10-07", "something_else") == 0
+
+
+def test_usage_survives_reopening(tmp_path):
+    path = tmp_path / "registry.sqlite3"
+
+    DocumentRegistry(path=path).add_usage("2026-10-07", "embedding_batches", 7)
+
+    assert DocumentRegistry(path=path).usage("2026-10-07", "embedding_batches") == 7

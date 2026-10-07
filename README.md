@@ -30,9 +30,11 @@ Single-document RAG chat over an uploaded PDF, built with FastAPI, Streamlit, De
 - Reports retrieval telemetry (`retrieved_chunks`, `considered_candidates`, `best_distance`, `cut_distance`, `profile_used`) with every answer, and the UI says so explicitly when an answer came from the document profile alone.
 
 **Operations**
-- Maps failures to real status codes as JSON: `409` concurrent ingest, `413` too large, `429` rate limit with `Retry-After`, `502`/`503`/`504` upstream failures.
-- Logs every request with an `X-Request-ID` and its latency, and logs the underlying cause of a `5xx` so it can be diagnosed.
-- `GET /health` is a cheap liveness check; `GET /ready` reports readiness **per document**, `degraded` when the index is empty or does not match the configured model / schema version / vector space, and `503` only when the store is unreachable. `GET /ready?deep=true` probes the embedding provider, cached for `HEALTH_DEEP_CACHE_SECONDS`.
+- Requires an `X-API-Key` on `/upload` and `/chat`, and rate limits both per key (in-process token bucket), returning `429` with `Retry-After`. `/health`, `/ready` and `/` stay open so platform probes need no credential. The key is required at startup, so the paid endpoints cannot be left open by omission.
+- Maps failures to real status codes as JSON: `401` missing/wrong key, `409` concurrent ingest, `413` too large, `429` rate limit or ingest budget with `Retry-After`, `502`/`503`/`504` upstream failures.
+- Bounds ingestion spend with a daily embedding-batch budget persisted in the registry, checked before embedding starts and logged (batch count and budget) at the start of every ingest.
+- Logs every request with an `X-Request-ID` and its latency, and logs the underlying cause of a `5xx` so it can be diagnosed. Every chat request also logs structured retrieval telemetry (`retrieved_chunks`, `best_distance`, `considered_candidates`, `profile_used`, `empty_context`), so the empty-context rate is answerable from the logs.
+- `GET /health` is a cheap liveness check and reports the worker count; `GET /ready` reports readiness **per document**, the registry document count, `degraded` when the index is empty or does not match the configured model / schema version / vector space, and `503` only when the store is unreachable. `GET /ready?deep=true` probes the embedding provider, cached for `HEALTH_DEEP_CACHE_SECONDS`.
 - Streamlit UI: file uploader, chat history, conditional Sources expander, clear messages when the backend is unreachable or rate limits, and a retry button for a failed upload.
 
 ## Endpoints
@@ -53,6 +55,14 @@ Copy `.env.example` to `.env`. Both API keys are required and the app fails at s
 | --- | --- | --- |
 | `GOOGLE_API_KEY` | — | Required. Embeddings. |
 | `DEEPSEEK_API_KEY` | — | Required. Generation. |
+| `API_KEY` | — | Required. Shared secret for `/upload` and `/chat`; the app refuses to start without it. Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
+| `API_VERSION` | `0.9.0` | Reported by `/health`; bump per release. |
+| `CORS_ORIGINS` | *(empty)* | Comma-separated browser origins allowed to call the API directly. Empty adds no CORS middleware (correct for the Streamlit server-to-server topology). |
+| `WEB_CONCURRENCY` | `1` | Must be 1: embedded ChromaDB with a process-wide ingest lock. The app refuses to start if it is > 1. |
+| `MULTI_WORKER_ACK` | `false` | Only set true after moving Chroma to server mode; it overrides the worker guard. |
+| `UPLOAD_RATE_LIMIT_PER_HOUR` | `10` | In-process token bucket per API key, on `/upload`. `0` disables. |
+| `CHAT_RATE_LIMIT_PER_HOUR` | `120` | In-process token bucket per API key, on `/chat`. `0` disables. |
+| `INGEST_DAILY_EMBEDDING_BATCH_BUDGET` | `2000` | Daily ceiling on embedding batches, checked before embedding and persisted in the registry. `0` disables. |
 | `MODEL` | `deepseek-chat` | DeepSeek generation model. |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | OpenAI-compatible endpoint. |
 | `GENERATION_TIMEOUT_SECONDS` | `60` | Timeout for the generation call. |
@@ -103,10 +113,20 @@ Paths are resolved relative to the working directory, so start each service from
 
 Requires Python 3.11+ (CI runs 3.12).
 
-1. Copy `.env.example` to `.env`, set `GOOGLE_API_KEY` (embeddings) and `DEEPSEEK_API_KEY` (generation).
-2. Backend: `pip install -r requirements.txt` then `uvicorn app.main:app --reload` from `backend/`.
-3. Frontend: `pip install -r requirements.txt` then `streamlit run app.py` from `frontend/`.
+1. Copy `.env.example` to `.env`, set `GOOGLE_API_KEY` (embeddings), `DEEPSEEK_API_KEY` (generation) and `API_KEY` (a value you generate; the paid endpoints require it).
+2. Backend: `pip install -r requirements.txt` then `uvicorn app.main:app --reload` from `backend/`. **Use one worker** (`--workers 1`, the default): embedded ChromaDB cannot take more, and the app refuses to start above one.
+3. Frontend: `pip install -r requirements.txt` then `streamlit run app.py` from `frontend/`. Set `BACKEND_API_KEY` to the same `API_KEY` so the UI can authenticate.
 4. Open http://127.0.0.1:8501
+
+### Deploy with Docker
+
+```bash
+cp .env.example .env    # set GOOGLE_API_KEY, DEEPSEEK_API_KEY, API_KEY
+docker compose up --build
+# UI on http://127.0.0.1:8501; the API is internal to the compose network
+```
+
+State (index, uploads, registry) lives on named volumes and survives a restart and an image rebuild. See [docs/deployment.md](docs/deployment.md) for the topology, environment variables, proxy alignment and the post-deploy runbook.
 
 ## Tests and lint
 
@@ -120,6 +140,14 @@ pytest          # includes a coverage floor of 75% for app/
 ```
 
 Tests mock the LLM and the embedding provider, so they run without API keys or network access.
+
+From `frontend/`:
+
+```bash
+pip install -r requirements-dev.txt
+ruff check app.py backend_client.py tests
+pytest          # the user-facing error contract
+```
 
 ## Evaluation
 
@@ -168,11 +196,17 @@ pip install fonttools
 
 ## Known limitations
 
-- **Run a single worker.** Ingestion is serialised with a process-wide lock and ChromaDB is used in embedded (file) mode. Multiple uvicorn workers would each hold their own client over one directory and could interleave resets. Running multiple workers requires moving Chroma to server mode.
+- **Run a single worker — now enforced.** Ingestion is serialised with a process-wide lock and ChromaDB is used in embedded (file) mode, so multiple uvicorn workers would each hold a client over one directory and could interleave resets. The app now refuses to start when `WEB_CONCURRENCY > 1` unless `MULTI_WORKER_ACK=true`, and the container pins `--workers 1`. Running multiple workers requires moving Chroma to server mode.
 - **Changing `EMBEDDING_MODEL` or `CHROMA_SPACE` invalidates the index.** Existing vectors are not re-embedded; the mismatch is detected and reported as `degraded` by `/ready` instead of being queried, so re-upload the document.
 - **No OCR.** Scanned or image-only PDFs are rejected, not transcribed.
 - **The relative margins are still tuned values.** Selection no longer depends on an absolute distance, but `RETRIEVAL_RELATIVE_MARGIN` and `RETRIEVAL_ABSOLUTE_SLACK` were chosen against the documents in `docs/shapes.json`; re-run `python -m eval.run_shapes` against your own before trusting them.
 - **A document with no PDF metadata and no bookmarks depends on a model call** to build its profile. If that call fails, or the opening pages do not state a field, the profile is thinner and metadata questions may fall back to retrieval.
 - **Nothing enforces multi-document isolation in the UI yet.** Retrieval and the profile are scoped by `document_id` and a registry records every document, but ingestion still replaces the index, so only one document is live at a time.
-- **No Docker yet.** There are no Dockerfiles or compose file; containerisation is planned for a later phase.
-- No streaming responses, conversation memory, authentication, or rate limiting for callers.
+- **State is files on disk.** The index, uploads and registry are three paths (`CHROMA_DIRECTORY`, `UPLOAD_DIRECTORY`, `REGISTRY_PATH`). On a host without a persistent volume they disappear on redeploy; `compose.yaml` mounts all three. `/ready` reports the registry document count so a lost volume is visible immediately.
+- No streaming responses or conversation memory. Authentication and rate limiting exist for the paid endpoints (see Operations); the UI itself has no login.
+
+## Licence
+
+[MIT](LICENSE). The evaluation uses only permissively licensed documents; see
+[backend/eval/documents/README.md](backend/eval/documents/README.md) for their
+sources and licences.

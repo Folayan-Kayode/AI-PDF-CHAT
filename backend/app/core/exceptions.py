@@ -65,6 +65,24 @@ class IngestionInProgressError(AppError):
     status_code = 409
 
 
+class IngestBudgetExceededError(AppError):
+    """
+    The daily embedding budget is exhausted.
+
+    Ingestion is the expensive path, so it has a spend ceiling independent of
+    the request rate limit. Mapped to 429 with a Retry-After pointing at the
+    next UTC day rather than a provider error surfacing mid-ingest.
+    """
+
+    status_code = 429
+
+    def __init__(self, detail: str, retry_after_seconds: float) -> None:
+        super().__init__(
+            detail,
+            headers={"Retry-After": str(max(1, int(round(retry_after_seconds))))},
+        )
+
+
 # --------------------------------------------------------------------------
 # Upstream dependency errors (not the client's fault -> 5xx / 429)
 # --------------------------------------------------------------------------

@@ -27,6 +27,13 @@ the most useful thing this exercise produced.
 | Answers | DeepSeek `deepseek-chat`, one call per question |
 | Runs | one pass per configuration for the ablation; four headline configurations repeated three times |
 
+The ablation's source document is a copyrighted textbook and is **not
+committed**, so those rows cannot be re-run exactly and are historical evidence.
+The reproducible evaluations below (document shapes, and the regression
+reproduction) use committed, permissively licensed substitutes — see
+[`backend/eval/documents/README.md`](../backend/eval/documents/README.md) — and
+run on a fresh clone.
+
 The question set deliberately contains six kinds of question:
 
 - **12 content** — the answer is stated on a page, in the document's own words.
