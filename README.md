@@ -115,8 +115,20 @@ Requires Python 3.11+ (CI runs 3.12).
 
 1. Copy `.env.example` to `.env`, set `GOOGLE_API_KEY` (embeddings), `DEEPSEEK_API_KEY` (generation) and `API_KEY` (a value you generate; the paid endpoints require it).
 2. Backend: `pip install -r requirements.txt` then `uvicorn app.main:app --reload` from `backend/`. **Use one worker** (`--workers 1`, the default): embedded ChromaDB cannot take more, and the app refuses to start above one.
-3. Frontend: `pip install -r requirements.txt` then `streamlit run app.py` from `frontend/`. Set `BACKEND_API_KEY` to the same `API_KEY` so the UI can authenticate.
+3. Frontend: `pip install -r requirements.txt` then `streamlit run app.py` from `frontend/`. The UI resolves the key from `BACKEND_API_KEY`, then `API_KEY`, then the repo-root `.env`, so a local `.env` is enough; export `BACKEND_API_KEY` only if you keep the key elsewhere.
 4. Open http://127.0.0.1:8501
+
+Or start both with one command, which reads `.env`, gives both processes the same key and pins one worker:
+
+```powershell
+.\scripts\dev.ps1                                   # Windows
+```
+
+```bash
+./scripts/dev.sh                                    # macOS / Linux
+```
+
+Pass `-Python <path>` (or set `PYTHON=<path>`) if the dependencies live in a specific environment.
 
 ### Deploy with Docker
 

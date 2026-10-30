@@ -72,6 +72,27 @@ uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --workers 1
 mandatory, not a performance choice. On a platform with a start-command field,
 use the same line.
 
+## Local development
+
+The UI resolves its key from, in order: `BACKEND_API_KEY`, then `API_KEY` in the
+process environment, then `API_KEY` in the repo-root `.env`. A local `.env` is
+therefore enough; the container never sees `.env` (it is not copied), and compose
+supplies `BACKEND_API_KEY` explicitly.
+
+One command starts both correctly:
+
+```powershell
+.\scripts\dev.ps1                                   # Windows
+```
+
+```bash
+./scripts/dev.sh                                    # macOS / Linux
+```
+
+It reads `.env`, exports the key under both names, starts uvicorn with one
+worker, waits for `/health`, then runs Streamlit. If no key can be resolved, the
+UI shows a configuration error at startup instead of a 401 on first use.
+
 ## State and volumes
 
 All state is three paths:

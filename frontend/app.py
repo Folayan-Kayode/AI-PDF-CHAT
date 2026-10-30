@@ -2,9 +2,19 @@
 
 import streamlit as st
 
-from backend_client import ask_question, upload_pdf
+from backend_client import BACKEND_API_KEY, ask_question, upload_pdf
 
 st.set_page_config(page_title="AI PDF Chat", page_icon="📄", layout="wide")
+
+# Fail before the first upload/chat, with an explanation, instead of letting a
+# missing key surface as a 401 the user cannot act on.
+if not BACKEND_API_KEY:
+    st.error(
+        "No backend API key is configured. Set `BACKEND_API_KEY` to the "
+        "backend's `API_KEY`, or add `API_KEY` to the repo-root `.env` "
+        "(read automatically in local development)."
+    )
+    st.stop()
 
 # ----------------------------
 # Session State

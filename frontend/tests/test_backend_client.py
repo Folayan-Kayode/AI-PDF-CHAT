@@ -175,3 +175,68 @@ def test_upload_pdf_reports_a_timeout_without_claiming_failure(monkeypatch):
     assert ok is False
     # The request was delivered, so the message must not tell the user it failed.
     assert "may still be indexing" in message
+
+
+# --------------------------------------------------------------------------
+# API key resolution (the local-development trap)
+# --------------------------------------------------------------------------
+
+
+def test_resolution_prefers_the_explicit_backend_key(tmp_path):
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("API_KEY=from-dotenv\n", encoding="utf-8")
+
+    value, source = backend_client.resolve_api_key(
+        {"BACKEND_API_KEY": "explicit", "API_KEY": "from-env"},
+        dotenv,
+    )
+
+    assert value == "explicit"
+    assert source == "BACKEND_API_KEY"
+
+
+def test_resolution_falls_back_to_the_api_key_environment(tmp_path):
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("API_KEY=from-dotenv\n", encoding="utf-8")
+
+    value, source = backend_client.resolve_api_key({"API_KEY": "from-env"}, dotenv)
+
+    assert value == "from-env"
+    assert source == "API_KEY"
+
+
+def test_resolution_falls_back_to_the_repo_dotenv(tmp_path):
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("API_KEY=from-dotenv\n", encoding="utf-8")
+
+    value, source = backend_client.resolve_api_key({}, dotenv)
+
+    assert value == "from-dotenv"
+    assert source == str(dotenv)
+
+
+def test_resolution_returns_nothing_when_unconfigured(tmp_path):
+    value, source = backend_client.resolve_api_key({}, tmp_path / "absent.env")
+
+    assert value == ""
+    assert source is None
+
+
+def test_dotenv_parser_handles_export_quotes_and_other_keys(tmp_path):
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(
+        '# comment\nGOOGLE_API_KEY=other\n\nexport API_KEY="quoted value"\n',
+        encoding="utf-8",
+    )
+
+    assert backend_client.read_dotenv_value(dotenv, "API_KEY") == "quoted value"
+
+
+def test_dotenv_parser_ignores_a_missing_file(tmp_path):
+    assert backend_client.read_dotenv_value(tmp_path / "absent", "API_KEY") is None
+
+
+def test_api_headers_uses_the_resolved_key(monkeypatch):
+    monkeypatch.setattr(backend_client, "BACKEND_API_KEY", "resolved")
+
+    assert backend_client.api_headers() == {"X-API-Key": "resolved"}
