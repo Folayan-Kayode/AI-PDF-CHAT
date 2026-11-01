@@ -198,7 +198,7 @@ empty context, or if a document is missing:
 | `table` | table of sensor readings | 3 | 2/2 | 1/1 | 0.00 | 0.00 | 2 |
 | `german` | 1-page German document | 2 | 1/1 | 1/1 | 0.00 | 0.00 | 2 |
 | `standard` | RFC 9110, no bookmarks | 4 | 2/3 | 1/1 | 0.00 | 0.67 | 5 |
-| `book` | *Moby Dick*, chapter bookmarks | 4 | 3/3 | 1/1 | 0.00 | 0.67 | 5 |
+| `book` | *Moby Dick*, chapter bookmarks | 4 | 2/3 | 1/1 | 0.00 | 1.00 | 5 |
 
 Every row's empty-context rate is 0.00, which is the invariant this runner
 exists to enforce, and **no question was ever answered with an empty context**.
@@ -207,18 +207,25 @@ question is supposed to be answered from the profile and cites `[document]` by
 design. Empty-context rate is the clean regression signal; profile-only rate is
 read beside it.
 
-Fourteen of sixteen questions behaved correctly — ten of eleven answerable ones,
+Thirteen of sixteen questions behaved correctly — nine of eleven answerable ones,
 and all four unanswerable ones abstained correctly. The questions that used to
-fail now reach the model:
+fail still reach the model:
 
 | Question | Document | Passages | Best distance |
 | --- | --- | --- | --- |
-| "What is this document about?" | standard | 5 | 0.332 |
-| "What is the title of this document?" | standard | 5 | 0.343 |
+| "What is this document about?" | standard | 5 | 0.307 |
+| "What is the title of this document?" | standard | 5 | 0.345 |
 | "What is this book about?" | book | 5 | 0.346 |
 | "List the chapters of this book." | book | 5 | 0.295 |
-| "What was the temperature on 3 March 2024?" | table | 2 | 0.264 |
+| "What is the title of this book?" | book | 5 | 0.336 |
+| "What was the temperature on 3 March 2024?" | table | 2 | 0.278 |
 | "Wie oft erfolgt die Wartung der Heizungsanlage?" | german | 2 | 0.251 |
+
+Two answers missed the expected keyword on this single pass: "list the
+sections" on the unbookmarked standard, and "what is this book about?" on the
+book. The latter received five passages (best 0.346) and an answer, so it is
+keyword-scoring noise on one pass, not an empty context — the distinction the
+next section measures.
 
 Four things this demonstrates that the knob ablation could not:
 
@@ -227,7 +234,7 @@ Four things this demonstrates that the knob ablation could not:
   the profile outline, built from the document's own bookmarks; on the standard,
   which has no bookmarks, the profile is a model read of the opening pages.
 - **An outline is not always available.** "List the sections of this document."
-  is the single miss: RFC 9110 has no bookmarks, so its profile is a model
+  is one of the two misses: RFC 9110 has no bookmarks, so its profile is a model
   summary of the opening pages and did not name the sections. A bookmarked
   document answers the same question from its outline. This is the honest cost
   of not paying for a model summary by default (`DOCUMENT_SUMMARY_ALWAYS=false`).
@@ -256,20 +263,20 @@ selection rule:
 | --- | --- | --- | --- | --- | --- |
 | `standard` (RFC 9110) | **before:** absolute 0.60, no fallback | L2 | 4/5 | **0.67** | 0.67 |
 | `standard` | *middle:* absolute 0.60, no fallback | cosine | 4/5 | 0.00 | 0.50 |
-| `standard` | **after:** relative selection | cosine | 3/5 | **0.00** | 0.33 |
+| `standard` | **after:** relative selection | cosine | 4/5 | **0.00** | 0.50 |
 | `book` (*Moby Dick*) | **before:** absolute 0.60, no fallback | L2 | 3/4 | **0.50** | 1.00 |
 | `book` | *middle:* absolute 0.60, no fallback | cosine | 3/4 | 0.00 | 1.00 |
 | `book` | **after:** relative selection | cosine | 3/4 | **0.00** | 1.00 |
 
 **Correct is not the signal here and must not be read as one.** It is a single
 pass over four or five keyword-scored questions, so it moves by a whole question
-between runs; the standard's after arm scoring 3/5 against the before arm's 4/5
-is exactly that noise, not evidence that grounding answers in real passages
-hurts. The property this section measures is the empty-context rate.
+between runs; do not read the Correct column as evidence that grounding answers
+in real passages helps or hurts. The property this section measures is the
+empty-context rate.
 
 The before arm's own warnings pin the mechanism to the distance. On the
 standard, "what is this document about?" returned **8 candidates with a best L2
-distance of 0.615** — every one above 0.60 — so all eight were discarded and the
+distance of 0.663** — every one above 0.60 — so all eight were discarded and the
 pipeline answered from the profile. The book behaved the same way (best L2
 distances 0.67–0.91).
 
