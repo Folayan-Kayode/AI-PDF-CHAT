@@ -29,25 +29,40 @@ class FakeDatabase:
     """
     In-memory stand-in for ChromaDatabase.
 
-    replace_documents only commits once the whole write has succeeded, which
-    is what the real staging swap guarantees.
+    ``add_documents`` can fail before writing or after writing part of the
+    document, so both rollback paths can be exercised.
     """
 
     def __init__(self):
         self.stored: dict[str, tuple] = {}
         self.writes: list[tuple] = []
+        self.deleted: list[str] = []
         self.raise_on_write = False
+        self.raise_after_store = False
 
     def has_document(self, document_id: str) -> bool:
         return document_id in self.stored
 
-    def replace_documents(self, ids, documents, embeddings, metadatas) -> None:
+    def add_documents(self, ids, documents, embeddings, metadatas) -> None:
         self.writes.append((ids, documents, embeddings, metadatas))
+
+        document_id = metadatas[0]["document_id"]
 
         if self.raise_on_write:
             raise RetrievalError("Could not write to the document index.")
 
-        self.stored = {metadatas[0]["document_id"]: (ids, documents, metadatas)}
+        if self.raise_after_store:
+            # Simulate a failure after the first batch was committed.
+            self.stored[document_id] = (ids[:1], documents[:1], metadatas[:1])
+            raise RetrievalError("Could not write to the document index.")
+
+        self.stored[document_id] = (ids, documents, metadatas)
+
+    def delete_document(self, document_id: str) -> int:
+        self.deleted.append(document_id)
+        self.stored.pop(document_id, None)
+
+        return 1
 
     def count(self) -> int:
         return sum(len(entry[0]) for entry in self.stored.values())
@@ -75,7 +90,7 @@ def test_ingest_records_ids_metadata_and_fingerprint(
     )
 
     assert result["duplicate"] is False
-    assert result["index_replaced"] is True
+    assert result["index_replaced"] is False
     assert result["document_id"]
 
     ids, documents, embeddings, metadatas = database.writes[-1]
@@ -165,6 +180,107 @@ def test_failed_write_keeps_the_previous_document(
 
     assert "unchanged" in str(excinfo.value).lower()
     assert set(database.stored) == {"document-a"}
+    assert "document-b" in database.deleted
+
+
+def test_failed_write_removes_a_partially_written_document(
+    fixtures_dir: Path,
+    database: FakeDatabase,
+    embedder: FakeEmbedder,
+    monkeypatch,
+):
+    hashes = iter(["document-a", "document-b"])
+
+    monkeypatch.setattr(
+        PDFService,
+        "file_hash",
+        staticmethod(lambda path: next(hashes)),
+    )
+
+    PDFService.process(
+        fixtures_dir / "sample.pdf",
+        database=database,
+        embedding_model=embedder,
+    )
+
+    database.raise_after_store = True
+
+    with pytest.raises(RetrievalError):
+        PDFService.process(
+            fixtures_dir / "sample.pdf",
+            database=database,
+            embedding_model=embedder,
+        )
+
+    # The half-written document is removed; the earlier one is untouched.
+    assert set(database.stored) == {"document-a"}
+    assert "document-b" in database.deleted
+
+
+def test_two_documents_are_appended(
+    fixtures_dir: Path,
+    database: FakeDatabase,
+    embedder: FakeEmbedder,
+    monkeypatch,
+):
+    hashes = iter(["document-a", "document-b"])
+
+    monkeypatch.setattr(
+        PDFService,
+        "file_hash",
+        staticmethod(lambda path: next(hashes)),
+    )
+
+    PDFService.process(
+        fixtures_dir / "sample.pdf",
+        database=database,
+        embedding_model=embedder,
+    )
+
+    PDFService.process(
+        fixtures_dir / "sample.pdf",
+        database=database,
+        embedding_model=embedder,
+    )
+
+    assert set(database.stored) == {"document-a", "document-b"}
+    assert database.count() == sum(len(entry[0]) for entry in database.stored.values())
+
+
+def test_total_chunk_limit_is_enforced(
+    fixtures_dir: Path,
+    database: FakeDatabase,
+    embedder: FakeEmbedder,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "MAX_TOTAL_CHUNKS", 0)
+
+    with pytest.raises(DocumentTooLargeError):
+        PDFService.process(
+            fixtures_dir / "sample.pdf",
+            database=database,
+            embedding_model=embedder,
+        )
+
+    assert database.writes == [], "nothing should be written past the limit"
+
+
+def test_document_limit_is_enforced(
+    fixtures_dir: Path,
+    database: FakeDatabase,
+    embedder: FakeEmbedder,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "MAX_DOCUMENTS", 0)
+
+    with pytest.raises(DocumentTooLargeError):
+        PDFService.process(
+            fixtures_dir / "sample.pdf",
+            database=database,
+            embedding_model=embedder,
+        )
+
+    assert database.writes == [], "nothing should be written past the limit"
 
 
 def test_concurrent_ingest_is_rejected(
@@ -325,3 +441,91 @@ def test_profile_counts_toward_the_chunk_limit(
             embedding_model=FakeEmbedder(),
             summarizer=FakeSummarizer(),
         )
+
+
+# --------------------------------------------------------------------------
+# Deletion
+# --------------------------------------------------------------------------
+
+
+def _registry_with(tmp_path, *rows):
+    from app.database.registry import DocumentRegistry
+
+    registry = DocumentRegistry(path=tmp_path / "registry.sqlite3")
+
+    for row in rows:
+        registry.record(
+            pages=1,
+            chunks=1,
+            embedding_model=settings.EMBEDDING_MODEL,
+            schema_version=settings.EMBEDDING_SCHEMA_VERSION,
+            **row,
+        )
+
+    return registry
+
+
+def test_delete_document_removes_vectors_registry_and_file(tmp_path, monkeypatch):
+    registry = _registry_with(tmp_path, {"document_id": "doc-a", "filename": "a.pdf"})
+
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    (uploads / "a.pdf").write_bytes(b"%PDF-1.4")
+
+    monkeypatch.setattr(pdf_service, "get_registry", lambda: registry)
+    monkeypatch.setattr(settings, "UPLOAD_DIRECTORY", str(uploads))
+
+    database = FakeDatabase()
+    database.stored["doc-a"] = (["a_1_1"], ["x"], [{"document_id": "doc-a"}])
+
+    record = PDFService.delete_document("doc-a", database=database)
+
+    assert record is not None
+    assert record["filename"] == "a.pdf"
+    assert database.deleted == ["doc-a"]
+    assert registry.get("doc-a") is None
+    assert not (uploads / "a.pdf").exists()
+
+
+def test_delete_document_keeps_a_file_shared_by_another_document(
+    tmp_path,
+    monkeypatch,
+):
+    registry = _registry_with(
+        tmp_path,
+        {"document_id": "doc-a", "filename": "shared.pdf"},
+        {"document_id": "doc-b", "filename": "shared.pdf"},
+    )
+
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    (uploads / "shared.pdf").write_bytes(b"%PDF-1.4")
+
+    monkeypatch.setattr(pdf_service, "get_registry", lambda: registry)
+    monkeypatch.setattr(settings, "UPLOAD_DIRECTORY", str(uploads))
+
+    database = FakeDatabase()
+    database.stored["doc-a"] = (["a_1_1"], ["x"], [{"document_id": "doc-a"}])
+
+    PDFService.delete_document("doc-a", database=database)
+
+    # doc-b still uses the same filename, so the file must survive.
+    assert (uploads / "shared.pdf").exists()
+
+
+def test_delete_unknown_document_returns_none(tmp_path, monkeypatch):
+    registry = _registry_with(tmp_path)
+
+    monkeypatch.setattr(pdf_service, "get_registry", lambda: registry)
+
+    assert PDFService.delete_document("missing", database=FakeDatabase()) is None
+
+
+def test_delete_is_rejected_while_ingesting():
+    assert pdf_service._INGESTION_LOCK.acquire(timeout=0)
+
+    try:
+        with pytest.raises(IngestionInProgressError):
+            PDFService.delete_document("doc-a", database=FakeDatabase())
+    finally:
+        pdf_service._INGESTION_LOCK.release()

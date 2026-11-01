@@ -28,6 +28,13 @@ CREATE TABLE IF NOT EXISTS documents (
     embedding_model TEXT,
     schema_version INTEGER,
     created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS usage (
+    day TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, metric)
 )
 """
 
@@ -48,7 +55,7 @@ class DocumentRegistry:
         self._connection.row_factory = sqlite3.Row
 
         with self._lock:
-            self._connection.execute(_SCHEMA)
+            self._connection.executescript(_SCHEMA)
             self._connection.commit()
 
     # ------------------------------------------------------------------
@@ -91,20 +98,6 @@ class DocumentRegistry:
             )
             self._connection.commit()
 
-    def replace_with(self, **record: Any) -> None:
-        """
-        Record the given document as the only indexed document.
-
-        Ingestion swaps the whole collection, so the previously indexed
-        document is no longer in the index and must not be reported as if it
-        were. Multi-document ingestion will replace this with an append.
-        """
-        with self._lock:
-            self._connection.execute("DELETE FROM documents")
-            self._connection.commit()
-
-        self.record(**record)
-
     def forget(self, document_id: str) -> None:
         """Drop one document's record."""
         with self._lock:
@@ -113,6 +106,55 @@ class DocumentRegistry:
                 (document_id,),
             )
             self._connection.commit()
+
+    def clear(self) -> None:
+        """Drop every record (used by the evaluation harness to reset state)."""
+        with self._lock:
+            self._connection.execute("DELETE FROM documents")
+            self._connection.commit()
+
+    def count(self) -> int:
+        """How many documents the registry knows about."""
+        cursor = self._connection.execute("SELECT COUNT(*) AS total FROM documents")
+
+        row = cursor.fetchone()
+
+        return int(row["total"]) if row else 0
+
+    def close(self) -> None:
+        """Close the connection (tests and shutdown)."""
+        with self._lock:
+            self._connection.close()
+
+    # ------------------------------------------------------------------
+    # Usage (the ingest spend ceiling)
+    # ------------------------------------------------------------------
+
+    def usage(self, day: str, metric: str) -> int:
+        """Amount recorded for a metric on a UTC day (0 if none)."""
+        cursor = self._connection.execute(
+            "SELECT amount FROM usage WHERE day = ? AND metric = ?",
+            (day, metric),
+        )
+
+        row = cursor.fetchone()
+
+        return int(row["amount"]) if row else 0
+
+    def add_usage(self, day: str, metric: str, amount: int) -> int:
+        """Increment a metric and return the new total."""
+        with self._lock:
+            self._connection.execute(
+                """
+                INSERT INTO usage (day, metric, amount) VALUES (?, ?, ?)
+                ON CONFLICT(day, metric) DO UPDATE SET
+                    amount = usage.amount + excluded.amount
+                """,
+                (day, metric, amount),
+            )
+            self._connection.commit()
+
+        return self.usage(day, metric)
 
     # ------------------------------------------------------------------
     # Reads

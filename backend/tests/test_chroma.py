@@ -4,11 +4,7 @@ import pytest
 
 from app.core.config import settings
 from app.core.exceptions import RetrievalError
-from app.database.chroma import (
-    COLLECTION_NAME,
-    STAGING_COLLECTION_NAME,
-    ChromaDatabase,
-)
+from app.database.chroma import ChromaDatabase
 
 
 class RecordingCollection:
@@ -115,100 +111,90 @@ def test_write_failure_after_all_attempts_raises(db, monkeypatch):
 
 
 # --------------------------------------------------------------------------
-# Non-destructive replacement (B1)
+# Append and per-document delete (E1)
 # --------------------------------------------------------------------------
 
 
-def test_replace_documents_indexes_content(db):
-    db.replace_documents(
-        ids=["doc_1_1"],
-        documents=["the first document"],
-        embeddings=[[0.1, 0.2]],
-        metadatas=[{"document_id": "doc"}],
-    )
-
-    assert db.count() == 1
-
-
-def test_replace_documents_swaps_in_new_content(db):
-    db.replace_documents(
+def test_add_documents_appends_rather_than_replaces(db):
+    db.add_documents(
         ids=["a_1_1"],
         documents=["first"],
         embeddings=[[0.1, 0.2]],
         metadatas=[{"document_id": "a"}],
     )
 
-    db.replace_documents(
+    db.add_documents(
         ids=["b_1_1"],
         documents=["second"],
         embeddings=[[0.9, 0.9]],
         metadatas=[{"document_id": "b"}],
     )
 
-    assert db.count() == 1
-
-    result = db.search([0.9, 0.9], n_results=1)
-
-    assert result["documents"][0] == ["second"]
+    assert db.count() == 2
+    assert db.has_document("a") is True
+    assert db.has_document("b") is True
 
 
-def test_failed_replace_keeps_the_previous_index(db, monkeypatch):
-    db.replace_documents(
+def test_search_can_be_scoped_to_one_document(db):
+    db.add_documents(
         ids=["a_1_1"],
         documents=["first"],
         embeddings=[[0.1, 0.2]],
         metadatas=[{"document_id": "a"}],
     )
 
-    def explode(**kwargs):
-        raise RetrievalError("Could not write to the document index.")
+    db.add_documents(
+        ids=["b_1_1"],
+        documents=["second"],
+        embeddings=[[0.9, 0.9]],
+        metadatas=[{"document_id": "b"}],
+    )
 
-    monkeypatch.setattr(db, "add_documents", explode)
+    result = db.search([0.9, 0.9], n_results=5, document_id="b")
 
-    with pytest.raises(RetrievalError):
-        db.replace_documents(
-            ids=["b_1_1"],
-            documents=["second"],
-            embeddings=[[0.9, 0.9]],
-            metadatas=[{"document_id": "b"}],
-        )
+    assert result["documents"][0] == ["second"]
+    assert {metadata["document_id"] for metadata in result["metadatas"][0]} == {"b"}
 
-    # The document that was already indexed is still there and queryable.
+
+def test_delete_document_removes_only_that_document(db):
+    db.add_documents(
+        ids=["a_1_1"],
+        documents=["first"],
+        embeddings=[[0.1, 0.2]],
+        metadatas=[{"document_id": "a"}],
+    )
+
+    db.add_documents(
+        ids=["b_1_1"],
+        documents=["second"],
+        embeddings=[[0.9, 0.9]],
+        metadatas=[{"document_id": "b"}],
+    )
+
+    removed = db.delete_document("a")
+
+    assert removed == 1
     assert db.count() == 1
+    assert db.has_document("a") is False
 
-    result = db.search([0.1, 0.2], n_results=1)
+    result = db.search([0.1, 0.2], n_results=5)
 
-    assert result["documents"][0] == ["first"]
+    assert "first" not in result["documents"][0]
 
 
-def test_failed_replace_drops_the_staging_collection(db, monkeypatch):
-    def explode(**kwargs):
-        raise RetrievalError("Could not write to the document index.")
+def test_delete_unknown_document_is_a_noop(db):
+    assert db.delete_document("missing") == 0
 
-    monkeypatch.setattr(db, "add_documents", explode)
+
+def test_delete_document_wraps_collection_errors(db, monkeypatch):
+    class BrokenCollection:
+        def get(self, *args, **kwargs):
+            raise RuntimeError("index is down")
+
+    monkeypatch.setattr(db, "collection", BrokenCollection())
 
     with pytest.raises(RetrievalError):
-        db.replace_documents(
-            ids=["b_1_1"],
-            documents=["second"],
-            embeddings=[[0.9, 0.9]],
-            metadatas=[{"document_id": "b"}],
-        )
-
-    assert STAGING_COLLECTION_NAME not in db._names()
-    assert COLLECTION_NAME in db._names()
-
-
-def test_replace_cleans_up_previous_collection(db):
-    for name in ("a", "b"):
-        db.replace_documents(
-            ids=[f"{name}_1_1"],
-            documents=[name],
-            embeddings=[[0.1, 0.2]],
-            metadatas=[{"document_id": name}],
-        )
-
-    assert db._names() == {COLLECTION_NAME}
+        db.delete_document("a")
 
 
 # --------------------------------------------------------------------------

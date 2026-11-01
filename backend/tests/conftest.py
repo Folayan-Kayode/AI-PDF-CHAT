@@ -15,11 +15,15 @@ _TMP_ROOT = Path(tempfile.mkdtemp(prefix="ai-pdf-chat-tests-"))
 
 os.environ["GOOGLE_API_KEY"] = "test-google-key"
 os.environ["DEEPSEEK_API_KEY"] = "test-deepseek-key"
+# The paid endpoints require this; the client fixture sends it by default.
+os.environ["API_KEY"] = "test-api-key"
 os.environ["UPLOAD_DIRECTORY"] = str(_TMP_ROOT / "uploads")
 os.environ["CHROMA_DIRECTORY"] = str(_TMP_ROOT / "chroma_db")
 os.environ["LOG_LEVEL"] = "WARNING"
 os.environ["EMBEDDING_BATCH_DELAY_SECONDS"] = "0"
 os.environ["REGISTRY_PATH"] = str(_TMP_ROOT / "registry.sqlite3")
+# Never let the suite trip the deployment topology guard.
+os.environ["WEB_CONCURRENCY"] = "1"
 
 # Retries must not make the suite sleep for real.
 os.environ["EMBEDDING_RETRY_BASE_SECONDS"] = "0"
@@ -37,6 +41,9 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
+#: The key the suite configures; ``client`` sends it, ``no_key_client`` does not.
+TEST_API_KEY = "test-api-key"
+
 
 @pytest.fixture(scope="session")
 def fixtures_dir() -> Path:
@@ -52,10 +59,34 @@ def sample_pdf_bytes(fixtures_dir: Path) -> bytes:
 
 @pytest.fixture()
 def client() -> TestClient:
-    """Test client wired to the real app."""
+    """Test client wired to the real app, authenticated by default."""
+    from app.main import app
+
+    return TestClient(
+        app,
+        raise_server_exceptions=False,
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+
+
+@pytest.fixture()
+def no_key_client() -> TestClient:
+    """Test client that sends no API key, for the access-control tests."""
     from app.main import app
 
     return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limits_between_tests():
+    """A burst in one test must not leak into the next one's budget."""
+    from app.core.ratelimit import reset_rate_limits
+
+    reset_rate_limits()
+
+    yield
+
+    reset_rate_limits()
 
 
 @pytest.fixture(autouse=True)
@@ -86,19 +117,30 @@ def clear_singletons():
     Drop cached clients between tests.
 
     The app deliberately caches its database, embedding model, generator and
-    pipeline for the life of the process; tests need a clean slate.
+    pipeline for the life of the process; tests need a clean slate. The
+    registry is cleared too, because document ids are now durable across
+    requests and a stale row would change the default document.
     """
     yield
 
     from app.database.chroma import get_database
+    from app.database.registry import get_registry
     from app.rag.embeddings import get_embedding_model
     from app.rag.generator import get_generator
     from app.rag.pipeline import get_pipeline
+
+    try:
+        registry = get_registry()
+        registry.clear()
+        registry.close()
+    except Exception:
+        pass
 
     for cached in (
         get_database,
         get_embedding_model,
         get_generator,
         get_pipeline,
+        get_registry,
     ):
         cached.cache_clear()

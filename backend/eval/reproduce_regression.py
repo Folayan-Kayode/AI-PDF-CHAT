@@ -45,24 +45,24 @@ logging.basicConfig(level=logging.WARNING)
 
 HERE = Path(__file__).parent
 
+# Permissively licensed substitutes, committed so the reproduction runs on a
+# fresh clone (see eval/documents/README.md). The original copyrighted
+# documents can be supplied locally with --document, never committed.
 DOCUMENTS = {
-    "standard": Path(
-        r"C:\Users\Davel\Documents\Python\AI-PDF-CHAT\backend\uploads"
-        r"\cedia-cta_rp22_v1_2_sept_2023.pdf"
-    ),
-    "book": Path(r"C:\Users\Davel\Documents\Python\Whitman.pdf"),
+    "standard": HERE / "documents" / "standard_http.pdf",
+    "book": HERE / "documents" / "book_mobydick.pdf",
 }
 
 # The reproduction set, per document: the broad/aggregate questions that an
 # absolute threshold deletes, a metadata question, and one the document cannot
-# answer at all. Questions are document-specific on purpose -- a CEDIA question
-# asked of a security textbook scores zero for reasons that have nothing to do
-# with retrieval.
+# answer at all. Questions are document-specific on purpose -- a question about
+# audio equipment asked of a novel scores zero for reasons that have nothing to
+# do with retrieval.
 QUESTIONS: dict[str, list[dict[str, Any]]] = {
     "standard": [
         {
             "question": "What is this document about?",
-            "expect": ["audio"],
+            "expect": ["http"],
             "category": "broad",
         },
         {
@@ -72,17 +72,12 @@ QUESTIONS: dict[str, list[dict[str, Any]]] = {
         },
         {
             "question": "What is the title of this document?",
-            "expect": ["immersive audio"],
+            "expect": ["http semantics"],
             "category": "metadata",
         },
         {
-            "question": "What does the document say about multichannel audio?",
-            "expect": ["audio"],
-            "category": "specific",
-        },
-        {
-            "question": "What is the recommended listening level for cinema?",
-            "expect": ["db"],
+            "question": "What does the document say about methods?",
+            "expect": ["method"],
             "category": "specific",
         },
         {
@@ -94,21 +89,21 @@ QUESTIONS: dict[str, list[dict[str, Any]]] = {
     "book": [
         {
             "question": "What is this book about?",
-            "expect": ["security"],
+            "expect": ["whale"],
             "category": "broad",
         },
         {
             "question": "List the chapters of this book.",
-            "expect": ["physical security"],
+            "expect": ["loomings"],
             "category": "broad",
         },
         {
             "question": "What is the title of this book?",
-            "expect": ["principles of information security"],
+            "expect": ["moby"],
             "category": "metadata",
         },
         {
-            "question": "What is the recipe for a chocolate cake?",
+            "question": "What is the capital of Mongolia?",
             "answerable": False,
             "category": "unanswerable",
         },
@@ -305,21 +300,56 @@ def to_markdown(runs: list[dict[str, Any]]) -> str:
     return header + "\n".join(rows) + "\n"
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
 
     parser.add_argument("--only", action="append", default=[])
+    parser.add_argument(
+        "--document",
+        action="append",
+        default=[],
+        metavar="NAME=PATH",
+        help=(
+            "Override a document by shape name, for documents that must not be "
+            "committed (e.g. --document book=C:\\path\\textbook.pdf)."
+        ),
+    )
+    parser.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help="Accept a run where some documents are absent instead of failing.",
+    )
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument("--markdown", type=Path, default=None)
 
     args = parser.parse_args()
 
-    names = args.only or list(DOCUMENTS)
+    documents = dict(DOCUMENTS)
 
-    runs = [run_document(name, DOCUMENTS[name]) for name in names]
+    for override in args.document:
+        if "=" not in override:
+            parser.error(f"--document must be NAME=PATH, got {override!r}")
+
+        name, _, path = override.partition("=")
+
+        if name not in documents:
+            parser.error(f"unknown document {name!r}; expected one of {sorted(documents)}")
+
+        documents[name] = Path(path)
+
+    names = args.only or list(documents)
+
+    runs = [run_document(name, documents[name]) for name in names]
 
     print()
     print(to_markdown(runs))
+
+    skipped = [run for run in runs if run.get("skipped")]
+
+    print(f"{len(runs) - len(skipped)} of {len(runs)} documents ran.", flush=True)
+
+    for run in skipped:
+        print(f"  MISSING: {run['document']} ({run.get('file')})", flush=True)
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -331,6 +361,9 @@ def main() -> None:
                     "generated_at": datetime.now(UTC).isoformat(),
                     "revision": git_revision(),
                     "documents": [run["document"] for run in runs],
+                    "documents_ran": len(runs) - len(skipped),
+                    "documents_total": len(runs),
+                    "missing": [run["document"] for run in skipped],
                     "limits": run_limits(),
                     "note": (
                         "The 'before' arm reconstructs the pre-fix state (L2 "
@@ -352,6 +385,17 @@ def main() -> None:
         args.markdown.write_text(to_markdown(runs), encoding="utf-8")
         print(f"wrote {args.markdown}")
 
+    if skipped and not args.allow_missing:
+        print(
+            "Refusing to report a quietly smaller run. Provide the missing "
+            "documents, or pass --allow-missing to accept the partial run.",
+            flush=True,
+        )
+
+        return 1
+
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

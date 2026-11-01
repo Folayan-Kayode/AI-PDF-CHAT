@@ -1,0 +1,23 @@
+# Build context exclusions for the backend image.
+# The Dockerfile only copies requirements.txt and app/, so this is about
+# keeping the context small and never shipping runtime state into an image.
+
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+.venv
+venv
+
+# Secrets and runtime state must never enter an image.
+.env
+.env.*
+!.env.example
+chroma_db/
+uploads/
+*.db
+*.sqlite3
+
+# Not needed at runtime.
+tests/
+eval/
