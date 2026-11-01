@@ -11,9 +11,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 
-# Run as a non-root user, with a writable /data for the three state paths
-# (CHROMA_DIRECTORY, UPLOAD_DIRECTORY, REGISTRY_PATH) mounted in compose.
-RUN useradd -m appuser && mkdir -p /data && chown -R appuser /data
+# All runtime state lives under /data, which is a volume. Create the three
+# subdirectories *before* chowning: Docker initialises a new named volume from
+# the image's directory, preserving ownership. Without this, the mountpoints are
+# root-owned and the app cannot write its index ("unable to open database
+# file"). Setting the defaults here also makes a bare `docker run` work, not
+# only compose.
+ENV CHROMA_DIRECTORY=/data/chroma_db \
+    UPLOAD_DIRECTORY=/data/uploads \
+    REGISTRY_PATH=/data/registry/registry.sqlite3
+
+RUN useradd -m appuser \
+    && mkdir -p /data/chroma_db /data/uploads /data/registry \
+    && chown -R appuser:appuser /data
 
 USER appuser
 
