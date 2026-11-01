@@ -65,6 +65,12 @@ class IngestionInProgressError(AppError):
     status_code = 409
 
 
+class DocumentNotFoundError(AppError):
+    """The requested document is not indexed."""
+
+    status_code = 404
+
+
 class IngestBudgetExceededError(AppError):
     """
     The daily embedding budget is exhausted.

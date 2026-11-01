@@ -240,3 +240,106 @@ def test_api_headers_uses_the_resolved_key(monkeypatch):
     monkeypatch.setattr(backend_client, "BACKEND_API_KEY", "resolved")
 
     assert backend_client.api_headers() == {"X-API-Key": "resolved"}
+
+
+# --------------------------------------------------------------------------
+# Documents and document-scoped chat (E1)
+# --------------------------------------------------------------------------
+
+
+class RecordingGet:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    def __call__(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+
+        return self.response
+
+
+class RecordingDelete(RecordingGet):
+    pass
+
+
+def test_ask_question_includes_the_document_id(monkeypatch):
+    recorded = RecordingPost(FakeResponse(200, {"answer": "a", "sources": []}))
+
+    monkeypatch.setattr(backend_client.requests, "post", recorded)
+
+    backend_client.ask_question("q", document_id="doc-a")
+
+    _, kwargs = recorded.calls[0]
+
+    assert kwargs["json"] == {"question": "q", "document_id": "doc-a"}
+
+
+def test_ask_question_omits_an_empty_document_id(monkeypatch):
+    recorded = RecordingPost(FakeResponse(200, {"answer": "a", "sources": []}))
+
+    monkeypatch.setattr(backend_client.requests, "post", recorded)
+
+    backend_client.ask_question("q", document_id=None)
+
+    _, kwargs = recorded.calls[0]
+
+    assert kwargs["json"] == {"question": "q"}
+
+
+def test_list_documents_returns_rows(monkeypatch):
+    recorded = RecordingGet(
+        FakeResponse(
+            200,
+            {"documents": [{"document_id": "a", "filename": "a.pdf"}]},
+        )
+    )
+
+    monkeypatch.setattr(backend_client.requests, "get", recorded)
+
+    documents, error = backend_client.list_documents()
+
+    assert error is None
+    assert documents[0]["filename"] == "a.pdf"
+
+    url, kwargs = recorded.calls[0]
+
+    assert url.endswith("/documents/")
+    assert "X-API-Key" in kwargs["headers"]
+
+
+def test_list_documents_surfaces_an_authentication_error(monkeypatch):
+    monkeypatch.setattr(
+        backend_client.requests,
+        "get",
+        RecordingGet(FakeResponse(401, {"detail": "Invalid or missing API key."})),
+    )
+
+    documents, error = backend_client.list_documents()
+
+    assert documents is None
+    assert "Invalid or missing API key." in error
+
+
+def test_delete_document_reports_success(monkeypatch):
+    recorded = RecordingDelete(FakeResponse(200, {"deleted": True, "filename": "a.pdf"}))
+
+    monkeypatch.setattr(backend_client.requests, "delete", recorded)
+
+    ok, message = backend_client.delete_document("doc-a")
+
+    assert ok is True
+    assert "a.pdf" in message
+    assert recorded.calls[0][0].endswith("/documents/doc-a")
+
+
+def test_delete_document_surfaces_a_404(monkeypatch):
+    monkeypatch.setattr(
+        backend_client.requests,
+        "delete",
+        RecordingDelete(FakeResponse(404, {"detail": "Document not found."})),
+    )
+
+    ok, message = backend_client.delete_document("missing")
+
+    assert ok is False
+    assert "Document not found." in message

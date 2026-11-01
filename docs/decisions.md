@@ -120,3 +120,26 @@ evaluation raising them so its own document would fit.
 published number described a configuration the product would not accept. The
 defaults are now 2000 pages and 20000 chunks, the harness overrides removed, and
 the limits recorded in each results file.
+
+---
+
+## Multi-document selection: append, not replace (kept)
+
+**Was.** Ingestion swapped the whole collection, so uploading a second PDF
+removed the first. The registry, per-document `document_id` scoping and
+per-document profiles already existed; only one document was ever live.
+
+**Now.** Ingestion appends. `GET /documents/` lists, `DELETE /documents/{id}`
+removes a document's vectors, registry row and file, and `/chat/` accepts an
+optional `document_id` (defaulting to the newest, so single-document clients keep
+working). The UI selects one document explicitly.
+
+**Why explicit selection.** “Ask across all documents” needs cross-document
+ranking and its own evaluation; nothing measured justifies it yet, and a wrong
+document is worse than a required choice.
+
+**Safety.** A failed append deletes the partially written document, so the
+documents already indexed are untouched. A shared upload filename is kept until
+the last document using it is deleted. `MAX_DOCUMENTS` and `MAX_TOTAL_CHUNKS`
+bound growth and are checked before embedding, so a rejected upload costs
+nothing.

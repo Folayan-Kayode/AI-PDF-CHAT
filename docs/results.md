@@ -339,6 +339,10 @@ reasoning in [decisions.md](decisions.md).
   The emptiness it produces is the property being demonstrated and is robust;
   the accuracy column is a single pass over a handful of questions and is
   directional, like every other single-pass accuracy number here.
+- **The evaluation is single-document per run.** Multi-document selection is
+  supported, but the harness resets between documents, so no published number
+  measures cross-document ranking — and there is deliberately no “ask across
+  documents” mode.
 - **The relative margins are still tuned values.** `RETRIEVAL_RELATIVE_MARGIN`
   and `RETRIEVAL_ABSOLUTE_SLACK` were chosen so the shape set passes; they have
   not been swept the way the old absolute value was. Re-run

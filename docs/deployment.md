@@ -56,7 +56,7 @@ The ones that matter for a deployment:
 | `CHROMA_DIRECTORY` / `UPLOAD_DIRECTORY` / `REGISTRY_PATH` | local paths | Point all three into the mounted volume (compose uses `/data/...`). |
 | `MAX_UPLOAD_SIZE_MB` | `25` | The application's own limit; align the reverse proxy with it (below). |
 | `UPLOAD_TIMEOUT_SECONDS` (frontend) | `1800` | How long the UI waits for an ingest; align the proxy read timeout with it. |
-| `API_VERSION` | `0.9.0` | Reported by `/health`; bump per release. |
+| `API_VERSION` | `1.0.0` | Reported by `/health`; bump per release. |
 | `UPLOAD_RATE_LIMIT_PER_HOUR` / `CHAT_RATE_LIMIT_PER_HOUR` | `10` / `120` | Per-key token buckets. `0` disables. |
 | `INGEST_DAILY_EMBEDDING_BATCH_BUDGET` | `2000` | Daily embedding-batch ceiling, persisted in the registry. |
 

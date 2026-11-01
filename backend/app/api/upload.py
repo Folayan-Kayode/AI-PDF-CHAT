@@ -139,6 +139,7 @@ async def upload_pdf(
             "filename": filename,
             "duplicate": True,
             "message": "This document has already been uploaded.",
+            "document_id": result["document_id"],
             "pages": 0,
             "chunks": 0,
         }
@@ -146,6 +147,7 @@ async def upload_pdf(
     return {
         "filename": filename,
         "duplicate": False,
+        "document_id": result["document_id"],
         "pages": len(result["pages"]),
         "chunks": len(result["chunks"]),
         "index_replaced": result.get("index_replaced", False),

@@ -49,12 +49,17 @@ def test_recording_the_same_document_twice_updates_it(registry):
     assert len(registry.list()) == 1
 
 
-def test_replace_with_keeps_only_the_new_document(registry):
-    registry.record(**_record())
+def test_records_accumulate_and_can_be_cleared(registry):
+    registry.record(**_record(document_id="doc-a", filename="a.pdf"))
+    registry.record(**_record(document_id="doc-b", filename="b.pdf"))
 
-    registry.replace_with(**_record(document_id="doc-b", filename="b.pdf"))
+    assert registry.count() == 2
+    assert {row["document_id"] for row in registry.list()} == {"doc-a", "doc-b"}
 
-    assert [row["document_id"] for row in registry.list()] == ["doc-b"]
+    registry.clear()
+
+    assert registry.count() == 0
+    assert registry.list() == []
 
 
 def test_documents_can_be_forgotten(registry):

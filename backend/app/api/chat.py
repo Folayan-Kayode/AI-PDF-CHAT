@@ -21,7 +21,7 @@ router = APIRouter(
 @router.post("/")
 def chat(request: ChatRequest) -> dict[str, Any]:
     """Answer a question using the indexed document."""
-    answer = ChatService.chat(request.question)
+    answer = ChatService.chat(request.question, document_id=request.document_id)
 
     # Retrieval telemetry is logged as structured fields on every request, so a
     # log query can answer "how often is the context empty" - the exact signal

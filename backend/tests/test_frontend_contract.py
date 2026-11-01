@@ -45,7 +45,9 @@ def test_the_frontend_header_is_accepted_by_the_real_api(no_key_client, monkeypa
     monkeypatch.setattr(
         chat_service.ChatService,
         "chat",
-        staticmethod(lambda question: {"answer": "ok", "sources": [], "retrieval": {}}),
+        staticmethod(
+            lambda question, document_id=None: {"answer": "ok", "sources": [], "retrieval": {}}
+        ),
     )
 
     client = _load_frontend_client()

@@ -24,9 +24,11 @@ ruff check app.py backend_client.py tests
 pytest
 ```
 
-The backend suite includes `tests/test_retrieval_invariants.py` and
-`tests/test_document_isolation.py`. Deleting one of those tests to make a change
-pass is a release blocker; they encode the failure above.
+The backend suite includes `tests/test_retrieval_invariants.py`,
+`tests/test_document_isolation.py`, and the multi-document selection tests
+(`test_chat_service.py`, the `/documents` cases in `test_api.py`). Deleting one
+of those tests to make a change pass is a release blocker; they encode the
+failure modes above and the isolation guarantee.
 
 ## 2. No default is changed without a measurement
 

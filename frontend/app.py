@@ -2,7 +2,13 @@
 
 import streamlit as st
 
-from backend_client import BACKEND_API_KEY, ask_question, upload_pdf
+from backend_client import (
+    BACKEND_API_KEY,
+    ask_question,
+    delete_document,
+    list_documents,
+    upload_pdf,
+)
 
 st.set_page_config(page_title="AI PDF Chat", page_icon="📄", layout="wide")
 
@@ -34,7 +40,7 @@ if "failed_file_key" not in st.session_state:
 # ----------------------------
 
 st.title("📄 AI PDF Chat")
-st.caption("Retrieve information from your document")
+st.caption("Retrieve information from your documents")
 
 st.divider()
 
@@ -58,7 +64,7 @@ if uploaded_file is not None:
             st.rerun()
 
     elif file_key != st.session_state.uploaded_file_key:
-        with st.spinner("Uploading PDF..."):
+        with st.spinner("Uploading and indexing PDF..."):
             ok, message = upload_pdf(uploaded_file)
 
         if ok:
@@ -66,6 +72,9 @@ if uploaded_file is not None:
 
             st.session_state.uploaded_file_key = file_key
             st.session_state.failed_file_key = None
+
+            # Refresh the picker so the new document is selectable.
+            st.rerun()
 
         else:
             st.error(message)
@@ -75,14 +84,62 @@ if uploaded_file is not None:
 st.divider()
 
 # ----------------------------
+# Documents
+# ----------------------------
+
+documents, documents_error = list_documents()
+
+if documents_error:
+    st.error(documents_error)
+
+    documents = []
+
+selected_document_id = None
+
+if documents:
+    by_id = {document["document_id"]: document for document in documents}
+
+    labels = {
+        f"{document['filename']} — {document.get('pages', '?')} pages, "
+        f"{document.get('chunks', '?')} chunks": document["document_id"]
+        for document in documents
+    }
+
+    selected_label = st.selectbox("Document", list(labels))
+    selected_document_id = labels[selected_label]
+    selected = by_id[selected_document_id]
+
+    confirm = st.checkbox(f"Confirm deleting **{selected['filename']}**")
+
+    if st.button("Delete selected document", disabled=not confirm):
+        ok, message = delete_document(selected_document_id)
+
+        if ok:
+            st.success(message)
+            st.session_state.uploaded_file_key = None
+
+            st.rerun()
+
+        else:
+            st.error(message)
+
+else:
+    st.info("No documents yet. Upload a PDF to start.")
+
+st.divider()
+
+# ----------------------------
 # Chat Section
 # ----------------------------
 
-question = st.chat_input("Ask a question about your PDF...")
+question = None
+
+if selected_document_id:
+    question = st.chat_input(f"Ask a question about {by_id[selected_document_id]['filename']}...")
 
 if question:
     with st.spinner("Model is thinking..."):
-        answer, error = ask_question(question)
+        answer, error = ask_question(question, document_id=selected_document_id)
 
     if error:
         st.error(error)

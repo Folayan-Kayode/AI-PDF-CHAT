@@ -268,7 +268,7 @@ def test_chat_returns_the_answer_and_sources(client: TestClient, monkeypatch):
     monkeypatch.setattr(
         chat_service.ChatService,
         "chat",
-        staticmethod(lambda question: expected),
+        staticmethod(lambda question, document_id=None: expected),
     )
 
     response = client.post("/chat/", json={"question": "what is it?"})
@@ -280,7 +280,7 @@ def test_chat_returns_the_answer_and_sources(client: TestClient, monkeypatch):
 def test_chat_maps_an_upstream_failure_to_json_503(client: TestClient, monkeypatch):
     from app.services import chat_service
 
-    def explode(question):
+    def explode(question, document_id=None):
         raise UpstreamUnavailableError("provider is down", service="generation")
 
     monkeypatch.setattr(chat_service.ChatService, "chat", staticmethod(explode))
@@ -294,7 +294,7 @@ def test_chat_maps_an_upstream_failure_to_json_503(client: TestClient, monkeypat
 def test_rate_limit_returns_429_with_retry_after(client: TestClient, monkeypatch):
     from app.services import chat_service
 
-    def explode(question):
+    def explode(question, document_id=None):
         raise UpstreamRateLimitError(
             "slow down",
             service="generation",
@@ -313,7 +313,7 @@ def test_rate_limit_returns_429_with_retry_after(client: TestClient, monkeypatch
 def test_chat_maps_an_unexpected_failure_to_json_500(client: TestClient, monkeypatch):
     from app.services import chat_service
 
-    def explode(question):
+    def explode(question, document_id=None):
         raise ValueError("something unexpected")
 
     monkeypatch.setattr(chat_service.ChatService, "chat", staticmethod(explode))
@@ -336,7 +336,7 @@ def test_server_errors_log_the_underlying_cause(
 ):
     from app.services import chat_service
 
-    def explode(question):
+    def explode(question, document_id=None):
         try:
             raise RuntimeError("the underlying chroma failure")
         except RuntimeError as cause:
@@ -358,7 +358,7 @@ def test_client_errors_log_without_a_traceback(
 ):
     from app.services import chat_service
 
-    def explode(question):
+    def explode(question, document_id=None):
         raise DocumentTooLargeError("too big")
 
     monkeypatch.setattr(chat_service.ChatService, "chat", staticmethod(explode))
@@ -709,3 +709,110 @@ def test_unexpected_ingest_failure_leaves_no_file(
     assert response.status_code == 500
     assert response.json()["detail"] == "Internal server error."
     assert not (upload_module.UPLOAD_FOLDER / "orphan.pdf").exists()
+
+
+# --------------------------------------------------------------------------
+# Multi-document selection (E1)
+# --------------------------------------------------------------------------
+
+
+def test_documents_require_a_key(no_key_client: TestClient):
+    assert no_key_client.get("/documents/").status_code == 401
+    assert no_key_client.delete("/documents/doc-a").status_code == 401
+
+
+def test_documents_list_is_empty_initially(client: TestClient):
+    response = client.get("/documents/")
+
+    assert response.status_code == 200
+    assert response.json() == {"documents": []}
+
+
+def test_documents_list_returns_registry_rows(client: TestClient, monkeypatch):
+    from app.api import documents as documents_module
+
+    class FakeRegistry:
+        def list(self):
+            return [
+                {
+                    "document_id": "doc-a",
+                    "filename": "a.pdf",
+                    "pages": 1,
+                    "chunks": 2,
+                }
+            ]
+
+    monkeypatch.setattr(documents_module, "get_registry", lambda: FakeRegistry())
+
+    response = client.get("/documents/")
+
+    assert response.status_code == 200
+    assert response.json()["documents"][0]["filename"] == "a.pdf"
+
+
+def test_chat_passes_the_selected_document(client: TestClient, monkeypatch):
+    from app.services import chat_service
+
+    seen: dict[str, str | None] = {}
+
+    def fake_chat(question, document_id=None):
+        seen["document_id"] = document_id
+
+        return {"answer": "ok", "sources": [], "retrieval": {}}
+
+    monkeypatch.setattr(chat_service.ChatService, "chat", staticmethod(fake_chat))
+
+    response = client.post(
+        "/chat/",
+        json={"question": "q", "document_id": "doc-a"},
+    )
+
+    assert response.status_code == 200
+    assert seen["document_id"] == "doc-a"
+
+
+def test_chat_rejects_an_unknown_document(client: TestClient):
+    response = client.post(
+        "/chat/",
+        json={"question": "q", "document_id": "missing"},
+    )
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_chat_rejects_a_document_id_with_a_path_separator(client: TestClient):
+    response = client.post(
+        "/chat/",
+        json={"question": "q", "document_id": "../escape"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_delete_unknown_document_is_404(client: TestClient):
+    assert client.delete("/documents/missing").status_code == 404
+
+
+def test_delete_document_returns_the_deleted_record(client: TestClient, monkeypatch):
+    from app.api import documents as documents_module
+
+    monkeypatch.setattr(
+        documents_module.PDFService,
+        "delete_document",
+        staticmethod(
+            lambda document_id: {
+                "document_id": document_id,
+                "filename": "a.pdf",
+            }
+        ),
+    )
+
+    response = client.delete("/documents/doc-a")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "deleted": True,
+        "document_id": "doc-a",
+        "filename": "a.pdf",
+    }

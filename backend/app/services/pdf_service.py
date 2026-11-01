@@ -78,7 +78,7 @@ def _record_document(**record: Any) -> None:
     index is authoritative and the registry is how /ready describes it.
     """
     try:
-        get_registry().replace_with(**record)
+        get_registry().record(**record)
     except Exception:
         logger.exception("could not record the document in the registry")
 
@@ -150,10 +150,12 @@ class PDFService:
         """
         Ingest a PDF into the vector store.
 
-        Serialised against other ingestions; a concurrent call is rejected
-        with a 409 rather than queued, because ingestion can take minutes.
-        The previous index survives any failure, so a bad upload never costs
-        the user the document they already had.
+        Documents are appended, so uploading a second PDF does not remove the
+        first. Serialised against other ingestions; a concurrent call is
+        rejected with a 409 rather than queued, because ingestion can take
+        minutes. A failed append is rolled back to remove the partially written
+        document, so a bad upload never costs the user the documents they
+        already had.
         """
         database = database or get_database()
         embedding_model = embedding_model or get_embedding_model()
@@ -216,6 +218,28 @@ class PDFService:
                 f"the {settings.MAX_CHUNKS_PER_DOCUMENT}-chunk limit."
             )
 
+        total_chunks = database.count() + len(chunks)
+
+        if total_chunks > settings.MAX_TOTAL_CHUNKS:
+            raise DocumentTooLargeError(
+                f"Adding this document would index {total_chunks} chunks, which "
+                f"exceeds the {settings.MAX_TOTAL_CHUNKS}-chunk total limit. "
+                "Delete a document first."
+            )
+
+        try:
+            registered = get_registry().count()
+        except Exception:
+            # The registry is a convenience; do not block an ingest on it.
+            logger.exception("could not count registered documents")
+            registered = 0
+
+        if registered >= settings.MAX_DOCUMENTS:
+            raise DocumentTooLargeError(
+                f"The document limit ({settings.MAX_DOCUMENTS}) has been reached. "
+                "Delete a document first."
+            )
+
         texts = [chunk["text"] for chunk in chunks]
 
         ids = [f"{document_id}_{chunk['page_start']}_{chunk['chunk']}" for chunk in chunks]
@@ -257,15 +281,26 @@ class PDFService:
         cls._charge_ingest_budget(batches)
 
         try:
-            database.replace_documents(
+            database.add_documents(
                 ids=ids,
                 documents=texts,
                 embeddings=embeddings,
                 metadatas=metadatas,
             )
         except RetrievalError as exc:
+            # An append can fail after some batches were committed. Remove this
+            # document's chunks so a failed upload never leaves a partial
+            # document in the index; the documents already there are untouched.
+            try:
+                database.delete_document(document_id)
+            except Exception:
+                logger.exception(
+                    "could not remove partially written chunks for document_id=%s",
+                    document_id,
+                )
+
             raise RetrievalError(
-                f"{exc.detail} The previously indexed document is unchanged.",
+                f"{exc.detail} The previously indexed documents are unchanged.",
                 service="vector_store",
             ) from exc
 
@@ -289,5 +324,62 @@ class PDFService:
             "chunks": chunks,
             "document_id": document_id,
             "duplicate": False,
-            "index_replaced": True,
+            # Kept for the upload response's compatibility; ingestion now
+            # appends, so it never replaces an existing document.
+            "index_replaced": False,
         }
+
+    @classmethod
+    def delete_document(
+        cls,
+        document_id: str,
+        database: ChromaDatabase | None = None,
+    ) -> dict[str, Any] | None:
+        """
+        Delete one document: vectors, registry row and the uploaded file.
+
+        Returns the registry record that was removed, or None when the
+        document is unknown. The uploaded file is kept if another document
+        shares the same filename, because the upload directory is keyed by
+        filename, not by document id.
+        """
+        database = database or get_database()
+
+        timeout = max(0.0, settings.INGESTION_LOCK_TIMEOUT_SECONDS)
+
+        if not _INGESTION_LOCK.acquire(timeout=timeout):
+            raise IngestionInProgressError(
+                "Another document is currently being ingested. Wait for it to finish and try again."
+            )
+
+        try:
+            registry = get_registry()
+
+            try:
+                record = registry.get(document_id)
+            except Exception:
+                logger.exception("could not read the registry while deleting")
+                record = None
+
+            indexed = database.has_document(document_id)
+
+            if record is None and not indexed:
+                return None
+
+            database.delete_document(document_id)
+
+            filename = (record or {}).get("filename")
+
+            if record is not None:
+                registry.forget(document_id)
+
+            if filename:
+                still_used = any(row.get("filename") == filename for row in registry.list())
+
+                if not still_used:
+                    path = Path(settings.UPLOAD_DIRECTORY) / Path(filename).name
+                    path.unlink(missing_ok=True)
+
+            return record or {"document_id": document_id, "filename": None}
+        finally:
+            _INGESTION_LOCK.release()

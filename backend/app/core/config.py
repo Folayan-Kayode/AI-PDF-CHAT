@@ -59,7 +59,7 @@ class Settings:
     PROJECT_NAME = "AI PDF Chat"
 
     # Pre-release: the deployment commit is tagged v1.0.0 once it is live.
-    API_VERSION = _env("API_VERSION", "0.9.0")
+    API_VERSION = _env("API_VERSION", "1.0.0")
 
     # ---------------- Generation: DeepSeek (OpenAI-compatible API) ---------
     MODEL_NAME = _env("MODEL", "deepseek-chat")
@@ -182,6 +182,13 @@ class Settings:
     MAX_PAGES_PER_DOCUMENT = _env_int("MAX_PAGES_PER_DOCUMENT", 2000)
 
     MAX_CHUNKS_PER_DOCUMENT = _env_int("MAX_CHUNKS_PER_DOCUMENT", 20000)
+
+    # Multi-document storage needs a ceiling too: per-document caps alone would
+    # let fifty books fill the disk. These are coarse guards, checked before
+    # embedding so a rejected upload costs nothing.
+    MAX_TOTAL_CHUNKS = _env_int("MAX_TOTAL_CHUNKS", 50000)
+
+    MAX_DOCUMENTS = _env_int("MAX_DOCUMENTS", 50)
 
     MAX_FILENAME_LENGTH = _env_int("MAX_FILENAME_LENGTH", 200)
 

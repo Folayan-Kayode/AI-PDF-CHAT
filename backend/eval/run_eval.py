@@ -30,6 +30,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.database.chroma import get_database
+from app.database.registry import get_registry
 from app.rag.citations import PROFILE_PAGE
 from app.rag.pipeline import is_abstention
 from eval.metrics import CallCounter, answer_matches, estimate_cost, summarise
@@ -181,6 +182,11 @@ def ingest(document: Path, chunk_size: int) -> None:
 
     try:
         get_database().reset()
+
+        # Each evaluation configuration/ shape is single-document by design, so
+        # clear the registry too; otherwise the picker/default-document logic
+        # would still point at the document from the previous run.
+        get_registry().clear()
 
         started = time.perf_counter()
 

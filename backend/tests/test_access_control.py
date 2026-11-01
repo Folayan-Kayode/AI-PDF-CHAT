@@ -17,7 +17,7 @@ def _stub_chat(monkeypatch, answer=None):
         chat_service.ChatService,
         "chat",
         staticmethod(
-            lambda question: (
+            lambda question, document_id=None: (
                 answer
                 or {"answer": "ok [p.1]", "sources": [{"page": 1, "chunk": 1}], "retrieval": {}}
             )

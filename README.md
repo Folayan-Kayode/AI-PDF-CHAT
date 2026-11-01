@@ -5,7 +5,8 @@ Single-document RAG chat over an uploaded PDF, built with FastAPI, Streamlit, De
 ## What it does today
 
 **Ingestion**
-- Upload one PDF via `POST /upload/` (single-document mode: a new upload replaces the index).
+- Upload PDFs via `POST /upload/`. Documents are **appended**, not replaced: several can be indexed at once and the UI selects which one to query.
+- List and delete documents (`GET /documents/`, `DELETE /documents/{id}`), with per-document vector, registry and file cleanup.
 - Validates the `.pdf` extension, the real `%PDF-` header, the file size, the filename length, and normalises the filename identically on every OS.
 - Writes the upload to a staging file and only moves it into place once it is proven to be a PDF, so a bad upload cannot overwrite a good copy.
 - Detects duplicates by SHA-256 content hash and skips re-embedding.
@@ -44,8 +45,10 @@ Single-document RAG chat over an uploaded PDF, built with FastAPI, Streamlit, De
 | `GET` | `/` | Project, version, generation model. |
 | `GET` | `/health` | Liveness. Cheap, does not touch the vector store. |
 | `GET` | `/ready` | Readiness, index size, embedding-model match. `?deep=true` also probes embeddings. |
-| `POST` | `/upload/` | Store and index one PDF. |
-| `POST` | `/chat/` | Answer a question from the indexed document. |
+| `POST` | `/upload/` | Store and index a PDF (appends to the index). |
+| `GET` | `/documents/` | List indexed documents, newest first. Requires the API key. |
+| `DELETE` | `/documents/{id}` | Delete a document's vectors, registry row and file. Requires the API key. |
+| `POST` | `/chat/` | Answer a question from one document. Accepts an optional `document_id`; defaults to the newest document. |
 
 ## Configuration
 
@@ -56,7 +59,7 @@ Copy `.env.example` to `.env`. Both API keys are required and the app fails at s
 | `GOOGLE_API_KEY` | — | Required. Embeddings. |
 | `DEEPSEEK_API_KEY` | — | Required. Generation. |
 | `API_KEY` | — | Required. Shared secret for `/upload` and `/chat`; the app refuses to start without it. Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
-| `API_VERSION` | `0.9.0` | Reported by `/health`; bump per release. |
+| `API_VERSION` | `1.0.0` | Reported by `/health`; bump per release. |
 | `CORS_ORIGINS` | *(empty)* | Comma-separated browser origins allowed to call the API directly. Empty adds no CORS middleware (correct for the Streamlit server-to-server topology). |
 | `WEB_CONCURRENCY` | `1` | Must be 1: embedded ChromaDB with a process-wide ingest lock. The app refuses to start if it is > 1. |
 | `MULTI_WORKER_ACK` | `false` | Only set true after moving Chroma to server mode; it overrides the worker guard. |
@@ -213,7 +216,7 @@ pip install fonttools
 - **No OCR.** Scanned or image-only PDFs are rejected, not transcribed.
 - **The relative margins are still tuned values.** Selection no longer depends on an absolute distance, but `RETRIEVAL_RELATIVE_MARGIN` and `RETRIEVAL_ABSOLUTE_SLACK` were chosen against the documents in `docs/shapes.json`; re-run `python -m eval.run_shapes` against your own before trusting them.
 - **A document with no PDF metadata and no bookmarks depends on a model call** to build its profile. If that call fails, or the opening pages do not state a field, the profile is thinner and metadata questions may fall back to retrieval.
-- **Nothing enforces multi-document isolation in the UI yet.** Retrieval and the profile are scoped by `document_id` and a registry records every document, but ingestion still replaces the index, so only one document is live at a time.
+- **Multi-document selection is explicit.** Several documents can be indexed and the UI picks one; there is no “ask across all documents” mode. Cross-document ranking would need its own evaluation before it ships. Coarse ceilings apply (`MAX_DOCUMENTS`, `MAX_TOTAL_CHUNKS`).
 - **State is files on disk.** The index, uploads and registry are three paths (`CHROMA_DIRECTORY`, `UPLOAD_DIRECTORY`, `REGISTRY_PATH`). On a host without a persistent volume they disappear on redeploy; `compose.yaml` mounts all three. `/ready` reports the registry document count so a lost volume is visible immediately.
 - No streaming responses or conversation memory. Authentication and rate limiting exist for the paid endpoints (see Operations); the UI itself has no login.
 

@@ -98,20 +98,6 @@ class DocumentRegistry:
             )
             self._connection.commit()
 
-    def replace_with(self, **record: Any) -> None:
-        """
-        Record the given document as the only indexed document.
-
-        Ingestion swaps the whole collection, so the previously indexed
-        document is no longer in the index and must not be reported as if it
-        were. Multi-document ingestion will replace this with an append.
-        """
-        with self._lock:
-            self._connection.execute("DELETE FROM documents")
-            self._connection.commit()
-
-        self.record(**record)
-
     def forget(self, document_id: str) -> None:
         """Drop one document's record."""
         with self._lock:
@@ -120,6 +106,25 @@ class DocumentRegistry:
                 (document_id,),
             )
             self._connection.commit()
+
+    def clear(self) -> None:
+        """Drop every record (used by the evaluation harness to reset state)."""
+        with self._lock:
+            self._connection.execute("DELETE FROM documents")
+            self._connection.commit()
+
+    def count(self) -> int:
+        """How many documents the registry knows about."""
+        cursor = self._connection.execute("SELECT COUNT(*) AS total FROM documents")
+
+        row = cursor.fetchone()
+
+        return int(row["total"]) if row else 0
+
+    def close(self) -> None:
+        """Close the connection (tests and shutdown)."""
+        with self._lock:
+            self._connection.close()
 
     # ------------------------------------------------------------------
     # Usage (the ingest spend ceiling)

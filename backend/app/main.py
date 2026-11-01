@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.api.chat import router as chat_router
+from app.api.documents import router as documents_router
 from app.api.health import router as health_router
 from app.api.upload import router as upload_router
 from app.core.config import settings
@@ -139,6 +140,13 @@ app.include_router(
 app.include_router(
     chat_router,
     dependencies=[Depends(require_api_key), Depends(chat_rate_limit)],
+)
+
+# Listing discloses filenames and deletion is destructive, so these require the
+# same key. They are cheap, so no rate limit applies.
+app.include_router(
+    documents_router,
+    dependencies=[Depends(require_api_key)],
 )
 
 

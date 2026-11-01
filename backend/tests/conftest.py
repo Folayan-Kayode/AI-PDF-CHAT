@@ -117,19 +117,30 @@ def clear_singletons():
     Drop cached clients between tests.
 
     The app deliberately caches its database, embedding model, generator and
-    pipeline for the life of the process; tests need a clean slate.
+    pipeline for the life of the process; tests need a clean slate. The
+    registry is cleared too, because document ids are now durable across
+    requests and a stale row would change the default document.
     """
     yield
 
     from app.database.chroma import get_database
+    from app.database.registry import get_registry
     from app.rag.embeddings import get_embedding_model
     from app.rag.generator import get_generator
     from app.rag.pipeline import get_pipeline
+
+    try:
+        registry = get_registry()
+        registry.clear()
+        registry.close()
+    except Exception:
+        pass
 
     for cached in (
         get_database,
         get_embedding_model,
         get_generator,
         get_pipeline,
+        get_registry,
     ):
         cached.cache_clear()

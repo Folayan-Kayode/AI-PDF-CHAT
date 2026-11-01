@@ -187,12 +187,20 @@ def upload_pdf(uploaded_file) -> tuple[bool, str]:
     )
 
 
-def ask_question(question: str) -> tuple[dict | None, str | None]:
+def ask_question(
+    question: str,
+    document_id: str | None = None,
+) -> tuple[dict | None, str | None]:
     """Ask the backend a question. Returns (payload, error)."""
+    body: dict[str, object] = {"question": question}
+
+    if document_id:
+        body["document_id"] = document_id
+
     try:
         response = requests.post(
             f"{BACKEND_URL}/chat/",
-            json={"question": question},
+            json=body,
             headers=api_headers(),
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
@@ -205,3 +213,43 @@ def ask_question(question: str) -> tuple[dict | None, str | None]:
         return None, backend_error_message(response)
 
     return response.json(), None
+
+
+def list_documents() -> tuple[list[dict] | None, str | None]:
+    """Every indexed document, newest first. Returns (documents, error)."""
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}/documents/",
+            headers=api_headers(),
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+    except requests.Timeout:
+        return None, "The document list timed out. Please try again."
+    except requests.RequestException as exc:
+        return None, unreachable_message(exc)
+
+    if response.status_code != 200:
+        return None, backend_error_message(response)
+
+    return response.json().get("documents", []), None
+
+
+def delete_document(document_id: str) -> tuple[bool, str]:
+    """Delete one document. Returns (ok, message)."""
+    try:
+        response = requests.delete(
+            f"{BACKEND_URL}/documents/{document_id}",
+            headers=api_headers(),
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+    except requests.Timeout:
+        return False, ("The delete request timed out. Check the document list before retrying.")
+    except requests.RequestException as exc:
+        return False, unreachable_message(exc)
+
+    if response.status_code != 200:
+        return False, backend_error_message(response)
+
+    payload = response.json()
+
+    return True, f"Deleted {payload.get('filename') or document_id}."

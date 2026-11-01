@@ -14,10 +14,6 @@ logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "pdf_documents"
 
-STAGING_COLLECTION_NAME = "pdf_documents__staging"
-
-PREVIOUS_COLLECTION_NAME = "pdf_documents__previous"
-
 # Metadata kind for the document profile chunk (see app/rag/summarizer.py).
 DOCUMENT_SUMMARY_KIND = "document_summary"
 
@@ -34,10 +30,11 @@ class ChromaDatabase:
     """
     Thin wrapper around a persistent Chroma collection.
 
-    The collection is created once and is NOT wiped on construction. New
-    content is written through replace_documents(), which stages the write in
-    a separate collection and swaps it in, so a failed write cannot destroy
-    the document that is currently indexed.
+    The collection is created once and is NOT wiped on construction. Documents
+    are appended (each chunk carries its ``document_id``), so several documents
+    coexist and retrieval can be scoped to one of them. A failed append is
+    cleaned up by the caller, which removes the partially written document and
+    leaves the documents that were already indexed untouched.
     """
 
     def __init__(self, path: str | None = None) -> None:
@@ -273,65 +270,23 @@ class ChromaDatabase:
                 if delay:
                     time.sleep(delay)
 
-    def replace_documents(
-        self,
-        ids: list[str],
-        documents: list[str],
-        embeddings: list[list[float]],
-        metadatas: list[dict[str, Any]],
-    ) -> None:
+    def delete_document(self, document_id: str) -> int:
         """
-        Replace the indexed document with new content.
+        Delete every chunk belonging to one document.
 
-        The new chunks are written to a staging collection first, and only
-        swapped in once every batch has been committed. If anything fails the
-        staging collection is dropped and the previously indexed document
-        stays queryable, so a bad upload cannot leave the user with nothing.
+        Scoped by ``document_id``, so a delete can never touch another
+        document's vectors. Returns the number of chunks removed.
         """
-        self._drop(STAGING_COLLECTION_NAME)
-
-        staging = self._open_collection(STAGING_COLLECTION_NAME)
-
         try:
-            self.add_documents(
-                ids=ids,
-                documents=documents,
-                embeddings=embeddings,
-                metadatas=metadatas,
-                collection=staging,
-            )
-        except RetrievalError:
-            self._drop(STAGING_COLLECTION_NAME)
-            raise
+            existing = self.collection.get(where={"document_id": document_id})
+            ids = existing.get("ids") or []
 
-        had_previous = COLLECTION_NAME in self._names()
+            if ids:
+                self.collection.delete(where={"document_id": document_id})
 
-        try:
-            if had_previous:
-                # Move the live collection aside first so the live name is
-                # never left empty, then promote the staging collection.
-                self.client.get_collection(COLLECTION_NAME).modify(name=PREVIOUS_COLLECTION_NAME)
-
-            staging.modify(name=COLLECTION_NAME)
-
+            return len(ids)
         except Exception as exc:
-            logger.exception("index swap failed; attempting to roll back")
-
-            try:
-                if PREVIOUS_COLLECTION_NAME in self._names():
-                    self.client.get_collection(PREVIOUS_COLLECTION_NAME).modify(
-                        name=COLLECTION_NAME
-                    )
-            except Exception:
-                logger.exception("index swap rollback failed")
-
-            self._drop(STAGING_COLLECTION_NAME)
-
-            raise RetrievalError("Could not activate the new document index.") from exc
-
-        self._drop(PREVIOUS_COLLECTION_NAME)
-
-        self.collection = self._open_collection(COLLECTION_NAME)
+            raise RetrievalError("Could not delete from the document index.") from exc
 
     def search(
         self,
