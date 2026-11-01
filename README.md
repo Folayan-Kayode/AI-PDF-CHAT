@@ -143,6 +143,8 @@ docker compose up --build
 
 State (index, uploads, registry) lives on named volumes and survives a restart and an image rebuild. See [docs/deployment.md](docs/deployment.md) for the topology, environment variables, proxy alignment and the post-deploy runbook.
 
+Verified end to end with Docker Compose on a local workstation — build, healthchecks, upload/ask, restart **and** image-rebuild persistence, `.env` exclusion, and the single-worker guard. It has **not** been deployed to a hosted platform.
+
 ## Tests and lint
 
 From `backend/`:
